@@ -83,8 +83,6 @@ class PPPMConp : public PPPM {
   virtual void fieldforce_ik();
   virtual void fieldforce_ad();
 
-  virtual void wirecorr();
-
   // triclinic
 
   void setup_triclinic();

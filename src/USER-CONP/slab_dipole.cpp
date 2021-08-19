@@ -28,6 +28,14 @@ using namespace std;
 //
 SlabDipole::SlabDipole(LAMMPS *lmp) : BoundaryCorrection(lmp){};
 
+/* ----------------------------------------------------------------------
+   Slab-geometry correction term to dampen inter-slab interactions between
+   periodically repeating slabs.  Yields good approximation to 2D Ewald if
+   adequate empty space is left between repeating slabs (J. Chem. Phys.
+   111, 3155).  Slabs defined here to be parallel to the xy plane. Also
+   extended to non-neutral systems (J. Chem. Phys. 131, 094107).
+-------------------------------------------------------------------------
+*/
 void SlabDipole::compute_corr(double qsum, int eflag_atom, int eflag_global,
                               double &energy, double *eatom) {
   // compute local contribution to global dipole moment

@@ -11,16 +11,16 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#ifndef LMP_IBC_SLAB_DIPOLE_H
-#define LMP_IBC_SLAB_DIPOLE_H
+#ifndef LMP_IBC_WIRE_DIPOLE_H
+#define LMP_IBC_WIRE_DIPOLE_H
 
 #include "boundary_correction.h"
 
 namespace LAMMPS_NS {
 
-class SlabDipole : public BoundaryCorrection {
+class WireDipole : public BoundaryCorrection {
  public:
-  SlabDipole(LAMMPS *);
+  WireDipole(LAMMPS *);
   void vector_corr(bigint *, double *);
   void matrix_corr(bigint *, double **);
   void compute_corr(double, int, int, double &, double *);
