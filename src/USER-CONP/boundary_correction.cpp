@@ -31,8 +31,19 @@ void BoundaryCorrection::setup(double x, double y, double z) {
   yprd_wire = y;
   zprd_slab = z;
   volume = x * y * z;
+  area = x * y;
   qqrd2e = force->qqrd2e;
   scale = 1.0;
+}
+void BoundaryCorrection::setup(double x, double y, double z, double g) {
+  xprd_wire = x;
+  yprd_wire = y;
+  zprd_slab = z;
+  volume = x * y * z;
+  area = x * y;
+  qqrd2e = force->qqrd2e;
+  scale = 1.0;
+  g_ewald  = g;
 }
 
 vector<int> BoundaryCorrection::gather_recvcounts(int n) {

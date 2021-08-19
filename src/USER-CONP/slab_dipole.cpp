@@ -24,10 +24,6 @@ using namespace std;
 
 #define SMALL 0.00001
 
-// use EW3DC slab correction
-//
-SlabDipole::SlabDipole(LAMMPS *lmp) : BoundaryCorrection(lmp){};
-
 /* ----------------------------------------------------------------------
    Slab-geometry correction term to dampen inter-slab interactions between
    periodically repeating slabs.  Yields good approximation to 2D Ewald if
@@ -36,6 +32,8 @@ SlabDipole::SlabDipole(LAMMPS *lmp) : BoundaryCorrection(lmp){};
    extended to non-neutral systems (J. Chem. Phys. 131, 094107).
 -------------------------------------------------------------------------
 */
+SlabDipole::SlabDipole(LAMMPS *lmp) : BoundaryCorrection(lmp){};
+
 void SlabDipole::compute_corr(double qsum, int eflag_atom, int eflag_global,
                               double &energy, double *eatom) {
   // compute local contribution to global dipole moment
