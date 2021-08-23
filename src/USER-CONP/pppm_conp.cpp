@@ -676,7 +676,7 @@ void PPPMConp::start_compute() {
     if (atom->nmax > nmax) {
       memory->destroy(part2grid);
       nmax = atom->nmax;
-      memory->create(part2grid, nmax, 3, "pppm:part2grid");
+      memory->create(part2grid, nmax, 3, "pppm/conp:part2grid");
     }
     // find grid points for all my particles
     // map my particle charge onto my local 3d density grid
