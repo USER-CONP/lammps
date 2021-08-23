@@ -82,13 +82,28 @@ void EwaldConp::init() {
       error->all(FLERR, "Incorrect boundaries with wire Ewald");
   }
 
+  int *per = domain->periodicity;
+  auto equal_periodicity = [per](int a[3]) {
+    for (int i = 0; i < 3; i++)
+      if (a[i] != per[i]) return false;
+    return true;
+  };
+  int periodicity_2d[] = {1, 1, 0};
+  int periodicity_1d[] = {0, 0, 1};
   if (slabflag == 1) {
     // EW3Dc dipole correction
+    if (!equal_periodicity(periodicity_2d))
+      error->all(FLERR, "Two dimensional system must use p p f");
     boundcorr = new SlabDipole(lmp);
   } else if (slabflag == 3) {
+    // EW2D
+    if (!equal_periodicity(periodicity_2d))
+      error->all(FLERR, "Two dimensional system must use p p f");
     boundcorr = new Slab2d(lmp);
   } else if (wireflag == 1) {
     // EW3Dc wire correction
+    if (!equal_periodicity(periodicity_1d))
+      error->all(FLERR, "One dimensional system must use f f p");
     boundcorr = new WireDipole(lmp);
   } else {
     error->all(FLERR, "pppm conp with dipole corrections, only");
