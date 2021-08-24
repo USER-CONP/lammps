@@ -191,12 +191,12 @@ void ComputeConpVector::init() {
 
   if (boundaryflag || kspaceflag) {
     //kspace = force->kspace;
-    kspace = dynamic_cast<ConpKspace *>(force->kspace);
-    if (kspace == nullptr) 
+    conp_kspace = dynamic_cast<ConpKspace *>(force->kspace);
+    if (conp_kspace == nullptr) 
       error->all(FLERR, "Kspace does not implement ConpKspace");
     g_ewald = force->kspace->g_ewald;
   } else
-    kspace = nullptr;
+    conp_kspace = nullptr;
 
   // need an occasional half neighbor list
 
@@ -237,12 +237,12 @@ void ComputeConpVector::compute_vector() {
   pair_time_total += MPI_Wtime() - pair_start_time;
   // kspace
   double kspace_start_time = MPI_Wtime();
-  if (kspaceflag) kspace->compute_vector(&mpos[0], vector);
+  if (kspaceflag) conp_kspace->compute_vector(&mpos[0], vector);
   MPI_Barrier(world);
   kspace_time_total += MPI_Wtime() - kspace_start_time;
   // boundary
   double boundary_start_time = MPI_Wtime();
-  if (boundaryflag) kspace->compute_vector_corr(&mpos[0], vector);
+  if (boundaryflag) conp_kspace->compute_vector_corr(&mpos[0], vector);
   MPI_Barrier(world);
   boundary_time_total += MPI_Wtime() - boundary_start_time;
   // reduce

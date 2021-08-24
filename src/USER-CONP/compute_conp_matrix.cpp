@@ -211,12 +211,12 @@ void ComputeConpMatrix::init() {
     pair = nullptr;
 
   if (boundaryflag || kspaceflag) {
-    kspace = dynamic_cast<ConpKspace *>(force->kspace);
-    if (kspace == nullptr) 
+    conp_kspace = dynamic_cast<ConpKspace *>(force->kspace);
+    if (conp_kspace == nullptr) 
       error->all(FLERR, "Kspace does not implement ConpKspace");
     g_ewald = force->kspace->g_ewald;
   } else
-    kspace = nullptr;
+    conp_kspace = nullptr;
 
   // need an occasional half neighbor list
 
@@ -255,14 +255,14 @@ void ComputeConpMatrix::compute_array() {
 
   MPI_Barrier(world);
   double kspace_time = MPI_Wtime();
-  if (kspaceflag) kspace->compute_matrix(mpos, array);
+  if (kspaceflag) conp_kspace->compute_matrix(mpos, array);
   MPI_Barrier(world);
   if (comm->me == 0)
     utils::logmesg(lmp,
                    fmt::format("Kspace time: {}\n", MPI_Wtime() - kspace_time));
   if (pairflag) pair_contribution();
   if (selfflag) self_contribution();
-  if (boundaryflag) kspace->compute_matrix_corr(mpos, array);
+  if (boundaryflag) conp_kspace->compute_matrix_corr(mpos, array);
 
   // reduce coulomb matrix with contributions from all procs
   // all procs need to know full matrix for matrix inversion

@@ -49,7 +49,7 @@ class ComputeConpMatrix : public Compute {
   bigint *mpos;  // locally stored matrix index of each local+ghost atom
   class Pair *pair;
   class NeighList *list;
-  class ConpKspace *kspace;
+  class ConpKspace *conp_kspace;
   FILE *fp, *fp_inv;
 
   long filepos;

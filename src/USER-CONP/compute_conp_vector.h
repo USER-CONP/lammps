@@ -45,7 +45,7 @@ class ComputeConpVector : public Compute {
   std::vector<bigint> mpos;
   class Pair *pair;
   class NeighList *list;
-  class ConpKspace *kspace;
+  class ConpKspace *conp_kspace;
   FILE *fp;
 
   long filepos;
