@@ -69,7 +69,7 @@ enum { FORWARD_IK, FORWARD_AD, FORWARD_IK_PERATOM, FORWARD_AD_PERATOM };
 /* ---------------------------------------------------------------------- */
 
 PPPMConp::PPPMConp(LAMMPS *lmp)
-    : PPPM(lmp),
+    : PPPM(lmp), ConpKspace(),
       electrolyte_density_brick(nullptr),
       electrolyte_density_fft(nullptr) {
   electrolyte_density_brick = nullptr;

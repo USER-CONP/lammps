@@ -21,6 +21,7 @@ ComputeStyle(conp/matrix, ComputeConpMatrix)
 #define LMP_COMPUTE_CONP_MATRIX_H
 
 #include "compute.h"
+#include "conp_kspace.h"
 
 namespace LAMMPS_NS {
 
@@ -48,8 +49,7 @@ class ComputeConpMatrix : public Compute {
   bigint *mpos;  // locally stored matrix index of each local+ghost atom
   class Pair *pair;
   class NeighList *list;
-  class KSpace *kspace;
-  class Ewald *ewald;
+  class ConpKspace *kspace;
   FILE *fp, *fp_inv;
 
   long filepos;

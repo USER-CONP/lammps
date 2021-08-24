@@ -190,7 +190,10 @@ void ComputeConpVector::init() {
     pair = nullptr;
 
   if (boundaryflag || kspaceflag) {
-    kspace = force->kspace;
+    //kspace = force->kspace;
+    kspace = dynamic_cast<ConpKspace *>(force->kspace);
+    if (kspace == nullptr) 
+      error->all(FLERR, "Kspace does not implement ConpKspace");
     g_ewald = force->kspace->g_ewald;
   } else
     kspace = nullptr;

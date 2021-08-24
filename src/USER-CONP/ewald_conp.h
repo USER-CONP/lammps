@@ -21,10 +21,11 @@ KSpaceStyle(ewald/conp, EwaldConp)
 #define LMP_EWALDCONP_H
 
 #include "kspace.h"
+#include "conp_kspace.h"
 
 namespace LAMMPS_NS {
 
-class EwaldConp : public KSpace {
+class EwaldConp : public KSpace, public ConpKspace {
  public:
   EwaldConp(class LAMMPS *);
   virtual ~EwaldConp();

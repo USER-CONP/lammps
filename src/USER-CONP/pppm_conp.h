@@ -21,6 +21,7 @@ KSpaceStyle(pppm/conp, PPPMConp)
 #define LMP_PPPM_CONP_H
 
 #include "pppm.h"
+#include "conp_kspace.h"
 #include "boundary_correction.h"
 
 #if defined(FFT_FFTW3)
@@ -46,7 +47,7 @@ typedef double FFT_SCALAR;
 
 namespace LAMMPS_NS {
 
-class PPPMConp : public PPPM {
+class PPPMConp : public PPPM, public ConpKspace {
  public:
   PPPMConp(class LAMMPS *);
   virtual ~PPPMConp();

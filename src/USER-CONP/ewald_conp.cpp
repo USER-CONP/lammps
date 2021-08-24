@@ -45,7 +45,7 @@ using namespace std;
 /* ---------------------------------------------------------------------- */
 
 EwaldConp::EwaldConp(LAMMPS *lmp)
-    : KSpace(lmp),
+    : KSpace(lmp), ConpKspace(),
       kxvecs(nullptr),
       kyvecs(nullptr),
       kzvecs(nullptr),
