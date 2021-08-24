@@ -21,6 +21,8 @@ KSpaceStyle(pppm/conp, PPPMConp)
 #define LMP_PPPM_CONP_H
 
 #include "pppm.h"
+#include "conp_kspace.h"
+#include "boundary_correction.h"
 
 #if defined(FFT_FFTW3)
 #define LMP_FFT_LIB "FFTW3"
@@ -45,7 +47,7 @@ typedef double FFT_SCALAR;
 
 namespace LAMMPS_NS {
 
-class PPPMConp : public PPPM {
+class PPPMConp : public PPPM, public ConpKspace {
  public:
   PPPMConp(class LAMMPS *);
   virtual ~PPPMConp();
@@ -65,8 +67,7 @@ class PPPMConp : public PPPM {
 
   FFT_SCALAR ***electrolyte_density_brick ;
   FFT_SCALAR  *electrolyte_density_fft;
-
-
+  class BoundaryCorrection *boundcorr;
 
   virtual void set_grid_global();
   void set_grid_local();
@@ -82,9 +83,6 @@ class PPPMConp : public PPPM {
   virtual void fieldforce();
   virtual void fieldforce_ik();
   virtual void fieldforce_ad();
-
-  virtual void slabcorr();
-  virtual void wirecorr();
 
   // triclinic
 

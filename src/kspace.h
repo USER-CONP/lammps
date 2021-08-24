@@ -139,13 +139,6 @@ class KSpace : protected Pointers {
   virtual int modify_param(int, char **) {return 0;}
   virtual double memory_usage() {return 0.0;}
   
-  // USER-CONP package
-  
-  virtual void compute_vector(bigint *, double *) {};
-  virtual void compute_vector_corr(bigint *, double *) {};
-  virtual void compute_matrix(bigint *, double **) {};
-  virtual void compute_matrix_corr(bigint *, double **) {};
-
 /* ----------------------------------------------------------------------
    compute gamma for MSM and pair styles
    see Eq 4 from Parallel Computing 35 (2009) 164-177

@@ -21,6 +21,7 @@ ComputeStyle(conp/vector, ComputeConpVector)
 #define LMP_COMPUTE_COUL_VECTOR_H
 
 #include "compute.h"
+#include "conp_kspace.h"
 
 namespace LAMMPS_NS {
 
@@ -44,8 +45,7 @@ class ComputeConpVector : public Compute {
   std::vector<bigint> mpos;
   class Pair *pair;
   class NeighList *list;
-  class KSpace *kspace;
-  class Ewald *ewald;
+  class ConpKspace *kspace;
   FILE *fp;
 
   long filepos;

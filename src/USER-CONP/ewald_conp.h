@@ -21,10 +21,11 @@ KSpaceStyle(ewald/conp, EwaldConp)
 #define LMP_EWALDCONP_H
 
 #include "kspace.h"
+#include "conp_kspace.h"
 
 namespace LAMMPS_NS {
 
-class EwaldConp : public KSpace {
+class EwaldConp : public KSpace, public ConpKspace {
  public:
   EwaldConp(class LAMMPS *);
   virtual ~EwaldConp();
@@ -44,6 +45,8 @@ class EwaldConp : public KSpace {
   void compute_matrix_corr(bigint *, double **);
 
  protected:
+  class BoundaryCorrection *boundcorr;
+
   int kxmax, kymax, kzmax;
   int kcount, kmax, kmax3d, kmax_created;
   double gsqmx, volume, area;
@@ -69,9 +72,6 @@ class EwaldConp : public KSpace {
   void coeffs();
   virtual void allocate();
   void deallocate();
-  void slabcorr();
-  void ew2dcorr();
-  void wirecorr();
 
   // triclinic
 
