@@ -43,6 +43,9 @@ FixChargeUpdate::FixChargeUpdate(LAMMPS *lmp, int narg, char **arg)
   symm = false;
   scalar_flag = 1;
 
+  update_time = 0;
+  mult_time = 0;
+
   // read fix command
   groups = std::vector<int>(1, igroup);
   group_bits = std::vector<int>(1, groupbit);
@@ -369,6 +372,13 @@ void FixChargeUpdate::create_taglist() {
   taglist = taglist_bygroup;
   std::sort(taglist.begin(), taglist.end());
 
+  // setup taglist
+  int const tag_max = taglist[ngroup - 1];
+  tag_to_iele = std::vector<int>(tag_max + 1, -1);
+  for (size_t i = 0; i < taglist.size(); i++) {
+    tag_to_iele[taglist[i]] = i;
+  }
+
   // group_idx allows mapping a vector that is sorted by taglist to being
   // ordered by taglist_bygroup
   group_idx = std::vector<tagint>();
@@ -387,13 +397,13 @@ void FixChargeUpdate::create_taglist() {
 std::vector<int> FixChargeUpdate::local_to_matrix() {
   int const nall = atom->nlocal + atom->nghost;
   int *tag = atom->tag;
+  int *mask = atom->mask;
   std::vector<int> mpos(nall, -1);
   for (int i = 0; i < nall; i++) {
-    for (bigint ii = 0; ii < ngroup; ii++) {
-      if (taglist[ii] == tag[i]) {
-        mpos[i] = ii;
-      }
-    }
+    if (mask[i] & groupbit)
+      mpos[i] = tag_to_iele[tag[i]];
+    else
+      mpos[i] = -1;
   }
   return mpos;
 }
@@ -413,11 +423,16 @@ void FixChargeUpdate::pre_reverse(int eflag, int /*vflag*/) {
 /* ---------------------------------------------------------------------- */
 
 void FixChargeUpdate::update_charges() {
+  MPI_Barrier(world);
+  double start = MPI_Wtime();
   int *mask = atom->mask;
   std::vector<int> mpos = local_to_matrix();
   int const nall = atom->nlocal + atom->nghost;
   vector_compute->compute_vector();
+  MPI_Barrier(world);
   double *b = vector_compute->vector;
+  MPI_Barrier(world);
+  double mult_start = MPI_Wtime();
   for (int i = 0; i < nall; i++) {
     if (!(groupbit & mask[i])) continue;
     double q_tmp = 0;
@@ -426,6 +441,9 @@ void FixChargeUpdate::update_charges() {
     }
     atom->q[i] = q_tmp;
   }
+  MPI_Barrier(world);
+  mult_time += MPI_Wtime() - mult_start;
+  update_time += MPI_Wtime() - start;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -573,6 +591,10 @@ double FixChargeUpdate::gausscorr(int eflag, bool fflag) {
 /* ---------------------------------------------------------------------- */
 
 FixChargeUpdate::~FixChargeUpdate() {
+  if (comm->me == 0) {
+    utils::logmesg(lmp, fmt::format("Multiplication time: {}\n", mult_time));
+    utils::logmesg(lmp, fmt::format("Update time: {}\n", update_time));
+  }
   if (!(read_mat || read_inv)) delete array_compute;
   delete vector_compute;
 }

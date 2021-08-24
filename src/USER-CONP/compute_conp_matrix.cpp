@@ -20,7 +20,6 @@
 
 #include <cmath>
 #include <cstring>
-#include <iostream>
 
 #include "atom.h"
 #include "comm.h"

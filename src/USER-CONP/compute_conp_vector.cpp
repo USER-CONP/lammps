@@ -14,6 +14,7 @@
 
 #include "compute_conp_vector.h"
 
+#include "assert.h"
 #include "atom.h"
 #include "comm.h"
 #include "error.h"
@@ -36,7 +37,7 @@ using namespace LAMMPS_NS;
 #define A5 1.061405429
 
 ComputeConpVector::ComputeConpVector(LAMMPS *lmp, int narg, char **arg)
-    : Compute(lmp, narg, arg), mpos(nullptr), fp(nullptr) {
+    : Compute(lmp, narg, arg), fp(nullptr) {
   if (narg < 4) error->all(FLERR, "Illegal compute coul/vector command");
 
   vector_flag = 1;
@@ -47,7 +48,6 @@ ComputeConpVector::ComputeConpVector(LAMMPS *lmp, int narg, char **arg)
 
   fp = nullptr;
   vector = nullptr;
-  mpos = nullptr;
 
   pairflag = 1;
   kspaceflag = 1;
@@ -57,8 +57,6 @@ ComputeConpVector::ComputeConpVector(LAMMPS *lmp, int narg, char **arg)
   overwrite = 1;
 
   g_ewald = 0.0;
-
-  assigned = false;
 
   eta =
       utils::numeric(FLERR, arg[3], false, lmp);  // TODO infer from pair_style!
@@ -130,19 +128,32 @@ ComputeConpVector::ComputeConpVector(LAMMPS *lmp, int narg, char **arg)
     if (ferror(fp)) error->one(FLERR, "Error writing file header");
     filepos = ftell(fp);
   }
+  setup_time_total = 0;
+  reduce_time_total = 0;
   kspace_time_total = 0;
+  pair_time_total = 0;
+  boundary_time_total = 0;
   b_time_total = 0;
+
+  alloc_time_total = 0;
+  mpos_time_total = 0;
 }
 
 /* ---------------------------------------------------------------------- */
 
 ComputeConpVector::~ComputeConpVector() {
-  if (comm->me == 0)
+  if (comm->me == 0) {
     utils::logmesg(lmp, fmt::format("B time: {}\n", b_time_total));
-  if (comm->me == 0)
     utils::logmesg(lmp, fmt::format("B kspace time: {}\n", kspace_time_total));
+    utils::logmesg(lmp, fmt::format("B pair time: {}\n", pair_time_total));
+    utils::logmesg(lmp,
+                   fmt::format("B boundary time: {}\n", boundary_time_total));
+    utils::logmesg(lmp, fmt::format("B setup time: {}\n", setup_time_total));
+    utils::logmesg(lmp, fmt::format("B reduce time: {}\n", reduce_time_total));
+    utils::logmesg(lmp, fmt::format("B alloc time: {}\n", alloc_time_total));
+    utils::logmesg(lmp, fmt::format("B mpos time: {}\n", mpos_time_total));
+  }
   delete[] vector;
-  if (assigned) delete[] mpos;
   if (fp && comm->me == 0) fclose(fp);
 }
 
@@ -210,17 +221,32 @@ void ComputeConpVector::setup() {
 void ComputeConpVector::compute_vector() {
   MPI_Barrier(world);
   double start_time = MPI_Wtime();
+  // setup
+  double setup_start_time = MPI_Wtime();
   update_mpos();
   for (int i = 0; i < ngroup; i++) vector[i] = 0.;
+  MPI_Barrier(world);
+  setup_time_total += MPI_Wtime() - setup_start_time;
+  // pair
+  double pair_start_time = MPI_Wtime();
   if (pairflag) pair_contribution();
   MPI_Barrier(world);
+  pair_time_total += MPI_Wtime() - pair_start_time;
+  // kspace
   double kspace_start_time = MPI_Wtime();
-  if (kspaceflag) kspace->compute_vector(mpos, vector);
+  if (kspaceflag) kspace->compute_vector(&mpos[0], vector);
   MPI_Barrier(world);
-  kspace_time_total += MPI_Wtime() - kspace_start_time; 
-  if (boundaryflag) kspace->compute_vector_corr(mpos, vector);
+  kspace_time_total += MPI_Wtime() - kspace_start_time;
+  // boundary
+  double boundary_start_time = MPI_Wtime();
+  if (boundaryflag) kspace->compute_vector_corr(&mpos[0], vector);
+  MPI_Barrier(world);
+  boundary_time_total += MPI_Wtime() - boundary_start_time;
+  // reduce
+  double reduce_start_time = MPI_Wtime();
   MPI_Allreduce(MPI_IN_PLACE, vector, ngroup, MPI_DOUBLE, MPI_SUM, world);
   MPI_Barrier(world);
+  reduce_time_total += MPI_Wtime() - reduce_start_time;
   b_time_total += MPI_Wtime() - start_time;
 }
 
@@ -303,30 +329,41 @@ void ComputeConpVector::create_taglist() {
     idispls[i] = idispls[i - 1] + igroupnum_list[i - 1];
   }
 
-  taglist = std::vector<int>(ngroup);
+  std::vector<int> taglist = std::vector<int>(ngroup);
   MPI_Allgatherv(&taglist_local.front(), igroupnum_local, MPI_LMP_TAGINT,
                  &taglist.front(), &igroupnum_list.front(), &idispls.front(),
                  MPI_LMP_TAGINT, world);
   // must be sorted for compatibility with fix_charge_update
   std::sort(taglist.begin(), taglist.end());
+
+  int const tag_max = taglist[ngroup - 1];
+  tag_to_iele = std::vector<int>(tag_max + 1, -1);
+  for (size_t i = 0; i < taglist.size(); i++) {
+    tag_to_iele[taglist[i]] = i;
+  }
 }
 
 /* ---------------------------------------------------------------------- */
 
 void ComputeConpVector::update_mpos() {
-  int const nmax = atom->nmax;
+  MPI_Barrier(world);
+  double alloc_start = MPI_Wtime();
+  int const nall = atom->nlocal + atom->nghost;
   int *tag = atom->tag;
-  if (assigned) delete[] mpos;
-  mpos = new bigint[nmax];
-  assigned = true;
-  for (int i = 0; i < nmax; i++) mpos[i] = -1;
-  for (bigint ii = 0; ii < ngroup; ii++) {
-    for (int i = 0; i < nmax; i++) {
-      if (taglist[ii] == tag[i]) {
-        mpos[i] = ii;
-      }
-    }
+  int *mask = atom->mask;
+  mpos = std::vector<bigint>(nall, -1);
+
+  MPI_Barrier(world);
+  alloc_time_total += MPI_Wtime() - alloc_start;
+  double mpos_start = MPI_Wtime();
+  for (int i = 0; i < nall; i++) {
+    if (mask[i] & groupbit)
+      mpos[i] = tag_to_iele[tag[i]];
+    else
+      mpos[i] = -1;
   }
+  MPI_Barrier(world);
+  mpos_time_total += MPI_Wtime() - mpos_start;
 }
 
 /* ---------------------------------------------------------------------- */

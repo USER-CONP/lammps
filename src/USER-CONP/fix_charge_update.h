@@ -44,9 +44,11 @@ class FixChargeUpdate : public Fix {
   std::vector<std::vector<double> > elastance;
   bigint ngroup;
   std::vector<tagint> taglist, taglist_bygroup, group_idx;
+  std::vector<int> tag_to_iele;
   bool read_inv, read_mat;
   bool symm;  // symmetrize elastance for charge neutrality
   double eta;
+  double update_time, mult_time;
   void create_taglist();
   void invert(std::vector<std::vector<double> >);
   void symmetrize();

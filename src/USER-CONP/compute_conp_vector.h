@@ -40,9 +40,8 @@ class ComputeConpVector : public Compute {
   double g_ewald, eta;
   int pairflag, kspaceflag, boundaryflag;
   int overwrite, gaussians;
-  std::vector<int> taglist;
-  bigint *mpos;
-  bool assigned;
+  std::vector<int> tag_to_iele;
+  std::vector<bigint> mpos;
   class Pair *pair;
   class NeighList *list;
   class KSpace *kspace;
@@ -57,8 +56,15 @@ class ComputeConpVector : public Compute {
   void pair_contribution();
   double calc_erfc(double);
 
+  double setup_time_total;
+  double reduce_time_total;
   double kspace_time_total;
+  double pair_time_total;
+  double boundary_time_total;
   double b_time_total;
+
+  double alloc_time_total;
+  double mpos_time_total;
 };
 
 }  // namespace LAMMPS_NS
