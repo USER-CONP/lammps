@@ -23,6 +23,7 @@ OPT.
    :columns: 4
 
    * :doc:`ewald (o) <kspace_style>`
+   * :doc:`ewald/conp <kspace_style>`
    * :doc:`ewald/disp <kspace_style>`
    * :doc:`ewald/dipole <kspace_style>`
    * :doc:`ewald/dipole/spin <kspace_style>`
@@ -30,6 +31,7 @@ OPT.
    * :doc:`msm/cg (o) <kspace_style>`
    * :doc:`pppm (giko) <kspace_style>`
    * :doc:`pppm/cg (o) <kspace_style>`
+   * :doc:`pppm/conp <kspace_style>`
    * :doc:`pppm/dipole <kspace_style>`
    * :doc:`pppm/dipole/spin <kspace_style>`
    * :doc:`pppm/disp (io) <kspace_style>`
