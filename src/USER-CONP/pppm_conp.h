@@ -80,19 +80,6 @@ class PPPMConp : public PPPM, public ConpKspace {
   virtual void compute_gf_ik();
   virtual void compute_gf_ad();
 
-  virtual void fieldforce();
-  virtual void fieldforce_ik();
-  virtual void fieldforce_ad();
-
-  // triclinic
-
-  void setup_triclinic();
-
-  // group-group interactions
-
-  virtual void slabcorr_groups(int, int, int);
-  virtual void wirecorr_groups(int, int, int);
-
   /* ----------------------------------------------------------------------
      denominator for Hockney-Eastwood Green's function
        of x,y,z = sin(kx*deltax/2), etc
