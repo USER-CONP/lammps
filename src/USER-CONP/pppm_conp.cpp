@@ -72,6 +72,7 @@ PPPMConp::PPPMConp(LAMMPS *lmp)
       ConpKspace(),
       electrolyte_density_brick(nullptr),
       electrolyte_density_fft(nullptr) {
+  group_group_enable = 0;
   electrolyte_density_brick = nullptr;
   electrolyte_density_fft = nullptr;
 }

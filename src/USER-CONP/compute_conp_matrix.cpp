@@ -193,10 +193,6 @@ void ComputeConpMatrix::init() {
   if ((boundaryflag || kspaceflag) && force->kspace == nullptr)
     error->all(FLERR, "No Kspace style defined for compute coul/matrix");
 
-  // TODO need another flag since we don't use compute_group_group()
-  if (kspaceflag && force->kspace->group_group_enable == 0)
-    error->all(FLERR, "Kspace style does not support compute coul/matrix");
-
   // check if coul pair style is active, no need for single() since done
   // explicitly
 

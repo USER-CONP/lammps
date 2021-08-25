@@ -44,69 +44,13 @@ using namespace std;
 
 /* ---------------------------------------------------------------------- */
 
-EwaldConp::EwaldConp(LAMMPS *lmp)
-    : KSpace(lmp), ConpKspace(),
-      kxvecs(nullptr),
-      kyvecs(nullptr),
-      kzvecs(nullptr),
-      ug(nullptr),
-      eg(nullptr),
-      vg(nullptr),
-      ek(nullptr),
-      sfacrl(nullptr),
-      sfacim(nullptr),
-      sfacrl_all(nullptr),
-      sfacim_all(nullptr),
-      cs(nullptr),
-      sn(nullptr),
-      sfacrl_A(nullptr),
-      sfacim_A(nullptr),
-      sfacrl_A_all(nullptr),
-      sfacim_A_all(nullptr),
-      sfacrl_B(nullptr),
-      sfacim_B(nullptr),
-      sfacrl_B_all(nullptr),
-      sfacim_B_all(nullptr) {
-  group_allocate_flag = 0;
-  kmax_created = 0;
-  ewaldflag = 1;
-  group_group_enable = 1;
-
-  accuracy_relative = 0.0;
-
-  kmax = 0;
-  kxvecs = kyvecs = kzvecs = nullptr;
-
-  ug = nullptr;
-  eg = vg = nullptr;
-  sfacrl = sfacim = sfacrl_all = sfacim_all = nullptr;
-
-  nmax = 0;
-  ek = nullptr;
-  cs = sn = nullptr;
-
-  kcount = 0;
-  eikr_step = -1;
-}
-
-void EwaldConp::settings(int narg, char **arg) {
-  if (narg != 1) error->all(FLERR, "Illegal kspace_style ewald command");
-
-  accuracy_relative = fabs(utils::numeric(FLERR, arg[0], false, lmp));
-}
+EwaldConp::EwaldConp(LAMMPS *lmp) : Ewald(lmp), ConpKspace() { eikr_step = -1; }
 
 /* ----------------------------------------------------------------------
    free all memory
 ------------------------------------------------------------------------- */
 
-EwaldConp::~EwaldConp() {
-  delete boundcorr;
-  deallocate();
-  if (group_allocate_flag) deallocate_groups();
-  memory->destroy(ek);
-  memory->destroy3d_offset(cs, -kmax_created);
-  memory->destroy3d_offset(sn, -kmax_created);
-}
+EwaldConp::~EwaldConp() { delete boundcorr; }
 
 /* ---------------------------------------------------------------------- */
 
@@ -114,7 +58,9 @@ void EwaldConp::init() {
   if (comm->me == 0) utils::logmesg(lmp, "Ewald initialization ...\n");
 
   // error check
-  triclinic_check();
+  if (domain->triclinic)
+    error->all(FLERR, "Cannot (yet) use Ewald with triclinic box ");
+  // triclinic_check();
   if (domain->dimension == 2)
     error->all(FLERR, "Cannot use Ewald with 2d simulation");
 
@@ -129,19 +75,11 @@ void EwaldConp::init() {
     if (domain->xperiodic != 1 || domain->yperiodic != 1 ||
         domain->boundary[2][0] != 1 || domain->boundary[2][1] != 1)
       error->all(FLERR, "Incorrect boundaries with slab Ewald");
-    if (domain->triclinic)
-      error->all(FLERR,
-                 "Cannot (yet) use Ewald with triclinic box "
-                 "and slab correction");
   } else if (wireflag) {
     if (domain->zperiodic != 1 || domain->boundary[0][0] != 1 ||
         domain->boundary[0][1] != 1 || domain->boundary[1][0] != 1 ||
         domain->boundary[1][1] != 1)
       error->all(FLERR, "Incorrect boundaries with wire Ewald");
-    if (domain->triclinic)
-      error->all(FLERR,
-                 "Cannot (yet) use Ewald with triclinic box "
-                 "and wire correction");
   }
 
   if (slabflag == 1) {
@@ -149,7 +87,6 @@ void EwaldConp::init() {
     boundcorr = new SlabDipole(lmp);
   } else if (slabflag == 3) {
     boundcorr = new Slab2d(lmp);
-    cout << "WARNING WIP" << endl;
   } else if (wireflag == 1) {
     // EW3Dc wire correction
     boundcorr = new WireDipole(lmp);
@@ -319,23 +256,6 @@ void EwaldConp::setup() {
     kymax_orig = kymax;
     kzmax_orig = kzmax;
 
-    // scale lattice vectors for triclinic skew
-
-    if (triclinic) {
-      double tmp[3];
-      tmp[0] = kxmax / xprd;
-      tmp[1] = kymax / yprd;
-      tmp[2] = kzmax / zprd;
-      lamda2xT(&tmp[0], &tmp[0]);
-      kxmax = MAX(1, static_cast<int>(tmp[0]));
-      kymax = MAX(1, static_cast<int>(tmp[1]));
-      kzmax = MAX(1, static_cast<int>(tmp[2]));
-
-      kmax = MAX(kxmax, kymax);
-      kmax = MAX(kmax, kzmax);
-      kmax3d = 4 * kmax * kmax * kmax + 6 * kmax * kmax + 3 * kmax;
-    }
-
   } else {
     kxmax = kx_ewald;
     kymax = ky_ewald;
@@ -369,32 +289,16 @@ void EwaldConp::setup() {
     memory->destroy3d_offset(cs, -kmax_created);
     memory->destroy3d_offset(sn, -kmax_created);
     nmax = atom->nmax;
-    memory->create(ek, nmax, 3, "ewald/conp:ek");
-    memory->create3d_offset(cs, -kmax, kmax, 3, nmax, "ewald/conp:cs");
-    memory->create3d_offset(sn, -kmax, kmax, 3, nmax, "ewald/conp:sn");
+    memory->create(ek, nmax, 3, "ewald:ek");
+    memory->create3d_offset(cs, -kmax, kmax, 3, nmax, "ewald:cs");
+    memory->create3d_offset(sn, -kmax, kmax, 3, nmax, "ewald:sn");
     kmax_created = kmax;
   }
   boundcorr->setup(xprd_wire, yprd_wire, zprd_slab, g_ewald);
 
   // pre-compute Ewald coefficients
 
-  if (triclinic == 0)
-    coeffs();
-  else
-    coeffs_triclinic();
-}
-
-/* ----------------------------------------------------------------------
-   compute RMS accuracy for a dimension
-------------------------------------------------------------------------- */
-
-double EwaldConp::rms(int km, double prd, bigint natoms, double q2) {
-  if (natoms == 0) natoms = 1;  // avoid division by zero
-  double value =
-      2.0 * q2 * g_ewald / prd * sqrt(1.0 / (MY_PI * km * natoms)) *
-      exp(-MY_PI * MY_PI * km * km / (g_ewald * g_ewald * prd * prd));
-
-  return value;
+  coeffs();
 }
 
 /* ----------------------------------------------------------------------
@@ -711,83 +615,6 @@ void EwaldConp::eik_dot_r() {
   }
 }
 
-/* ---------------------------------------------------------------------- */
-
-void EwaldConp::eik_dot_r_triclinic() {
-  int i, k, l, m, n, ic;
-  double cstr1, sstr1;
-  double sqk, clpm, slpm;
-
-  double **x = atom->x;
-  double *q = atom->q;
-  int nlocal = atom->nlocal;
-
-  double unitk_lamda[3];
-
-  double max_kvecs[3];
-  max_kvecs[0] = kxmax;
-  max_kvecs[1] = kymax;
-  max_kvecs[2] = kzmax;
-
-  // (k,0,0), (0,l,0), (0,0,m)
-
-  for (ic = 0; ic < 3; ic++) {
-    unitk_lamda[0] = 0.0;
-    unitk_lamda[1] = 0.0;
-    unitk_lamda[2] = 0.0;
-    unitk_lamda[ic] = 2.0 * MY_PI;
-    x2lamdaT(&unitk_lamda[0], &unitk_lamda[0]);
-    sqk = unitk_lamda[ic] * unitk_lamda[ic];
-    if (sqk <= gsqmx) {
-      for (i = 0; i < nlocal; i++) {
-        cs[0][ic][i] = 1.0;
-        sn[0][ic][i] = 0.0;
-        cs[1][ic][i] = cos(unitk_lamda[0] * x[i][0] + unitk_lamda[1] * x[i][1] +
-                           unitk_lamda[2] * x[i][2]);
-        sn[1][ic][i] = sin(unitk_lamda[0] * x[i][0] + unitk_lamda[1] * x[i][1] +
-                           unitk_lamda[2] * x[i][2]);
-        cs[-1][ic][i] = cs[1][ic][i];
-        sn[-1][ic][i] = -sn[1][ic][i];
-      }
-    }
-  }
-
-  for (ic = 0; ic < 3; ic++) {
-    for (m = 2; m <= max_kvecs[ic]; m++) {
-      unitk_lamda[0] = 0.0;
-      unitk_lamda[1] = 0.0;
-      unitk_lamda[2] = 0.0;
-      unitk_lamda[ic] = 2.0 * MY_PI * m;
-      x2lamdaT(&unitk_lamda[0], &unitk_lamda[0]);
-      sqk = unitk_lamda[ic] * unitk_lamda[ic];
-      for (i = 0; i < nlocal; i++) {
-        cs[m][ic][i] =
-            cs[m - 1][ic][i] * cs[1][ic][i] - sn[m - 1][ic][i] * sn[1][ic][i];
-        sn[m][ic][i] =
-            sn[m - 1][ic][i] * cs[1][ic][i] + cs[m - 1][ic][i] * sn[1][ic][i];
-        cs[-m][ic][i] = cs[m][ic][i];
-        sn[-m][ic][i] = -sn[m][ic][i];
-      }
-    }
-  }
-
-  for (n = 0; n < kcount; n++) {
-    k = kxvecs[n];
-    l = kyvecs[n];
-    m = kzvecs[n];
-    cstr1 = 0.0;
-    sstr1 = 0.0;
-    for (i = 0; i < nlocal; i++) {
-      clpm = cs[l][1][i] * cs[m][2][i] - sn[l][1][i] * sn[m][2][i];
-      slpm = sn[l][1][i] * cs[m][2][i] + cs[l][1][i] * sn[m][2][i];
-      cstr1 += q[i] * (cs[k][0][i] * clpm - sn[k][0][i] * slpm);
-      sstr1 += q[i] * (sn[k][0][i] * clpm + cs[k][0][i] * slpm);
-    }
-    sfacrl[n] = cstr1;
-    sfacim[n] = sstr1;
-  }
-}
-
 /* ----------------------------------------------------------------------
    pre-compute coefficients for each Ewald K-vector
 ------------------------------------------------------------------------- */
@@ -1055,162 +882,6 @@ void EwaldConp::coeffs() {
 }
 
 /* ----------------------------------------------------------------------
-   pre-compute coefficients for each Ewald K-vector for a triclinic
-   system
-------------------------------------------------------------------------- */
-
-void EwaldConp::coeffs_triclinic() {
-  int k, l, m;
-  double sqk, vterm;
-
-  double g_ewald_sq_inv = 1.0 / (g_ewald * g_ewald);
-  double preu = 4.0 * MY_PI / volume;
-
-  double unitk_lamda[3];
-
-  kcount = 0;
-
-  // 1 = (k,l,m), 2 = (k,-l,m), 3 = (k,l,-m), 4 = (k,-l,-m)
-
-  for (k = 1; k <= kxmax; k++) {
-    for (l = -kymax; l <= kymax; l++) {
-      for (m = -kzmax; m <= kzmax; m++) {
-        unitk_lamda[0] = 2.0 * MY_PI * k;
-        unitk_lamda[1] = 2.0 * MY_PI * l;
-        unitk_lamda[2] = 2.0 * MY_PI * m;
-        x2lamdaT(&unitk_lamda[0], &unitk_lamda[0]);
-        sqk = unitk_lamda[0] * unitk_lamda[0] +
-              unitk_lamda[1] * unitk_lamda[1] + unitk_lamda[2] * unitk_lamda[2];
-        if (sqk <= gsqmx) {
-          kxvecs[kcount] = k;
-          kyvecs[kcount] = l;
-          kzvecs[kcount] = m;
-          ug[kcount] = preu * exp(-0.25 * sqk * g_ewald_sq_inv) / sqk;
-          eg[kcount][0] = 2.0 * unitk_lamda[0] * ug[kcount];
-          eg[kcount][1] = 2.0 * unitk_lamda[1] * ug[kcount];
-          eg[kcount][2] = 2.0 * unitk_lamda[2] * ug[kcount];
-          vterm = -2.0 * (1.0 / sqk + 0.25 * g_ewald_sq_inv);
-          vg[kcount][0] = 1.0 + vterm * unitk_lamda[0] * unitk_lamda[0];
-          vg[kcount][1] = 1.0 + vterm * unitk_lamda[1] * unitk_lamda[1];
-          vg[kcount][2] = 1.0 + vterm * unitk_lamda[2] * unitk_lamda[2];
-          vg[kcount][3] = vterm * unitk_lamda[0] * unitk_lamda[1];
-          vg[kcount][4] = vterm * unitk_lamda[0] * unitk_lamda[2];
-          vg[kcount][5] = vterm * unitk_lamda[1] * unitk_lamda[2];
-          kcount++;
-        }
-      }
-    }
-  }
-
-  // 1 = (0,l,m), 2 = (0,l,-m)
-
-  for (l = 1; l <= kymax; l++) {
-    for (m = -kzmax; m <= kzmax; m++) {
-      unitk_lamda[0] = 0.0;
-      unitk_lamda[1] = 2.0 * MY_PI * l;
-      unitk_lamda[2] = 2.0 * MY_PI * m;
-      x2lamdaT(&unitk_lamda[0], &unitk_lamda[0]);
-      sqk = unitk_lamda[1] * unitk_lamda[1] + unitk_lamda[2] * unitk_lamda[2];
-      if (sqk <= gsqmx) {
-        kxvecs[kcount] = 0;
-        kyvecs[kcount] = l;
-        kzvecs[kcount] = m;
-        ug[kcount] = preu * exp(-0.25 * sqk * g_ewald_sq_inv) / sqk;
-        eg[kcount][0] = 0.0;
-        eg[kcount][1] = 2.0 * unitk_lamda[1] * ug[kcount];
-        eg[kcount][2] = 2.0 * unitk_lamda[2] * ug[kcount];
-        vterm = -2.0 * (1.0 / sqk + 0.25 * g_ewald_sq_inv);
-        vg[kcount][0] = 1.0;
-        vg[kcount][1] = 1.0 + vterm * unitk_lamda[1] * unitk_lamda[1];
-        vg[kcount][2] = 1.0 + vterm * unitk_lamda[2] * unitk_lamda[2];
-        vg[kcount][3] = 0.0;
-        vg[kcount][4] = 0.0;
-        vg[kcount][5] = vterm * unitk_lamda[1] * unitk_lamda[2];
-        kcount++;
-      }
-    }
-  }
-
-  // (0,0,m)
-
-  for (m = 1; m <= kmax; m++) {
-    unitk_lamda[0] = 0.0;
-    unitk_lamda[1] = 0.0;
-    unitk_lamda[2] = 2.0 * MY_PI * m;
-    x2lamdaT(&unitk_lamda[0], &unitk_lamda[0]);
-    sqk = unitk_lamda[2] * unitk_lamda[2];
-    if (sqk <= gsqmx) {
-      kxvecs[kcount] = 0;
-      kyvecs[kcount] = 0;
-      kzvecs[kcount] = m;
-      ug[kcount] = preu * exp(-0.25 * sqk * g_ewald_sq_inv) / sqk;
-      eg[kcount][0] = 0.0;
-      eg[kcount][1] = 0.0;
-      eg[kcount][2] = 2.0 * unitk_lamda[2] * ug[kcount];
-      vterm = -2.0 * (1.0 / sqk + 0.25 * g_ewald_sq_inv);
-      vg[kcount][0] = 1.0;
-      vg[kcount][1] = 1.0;
-      vg[kcount][2] = 1.0 + vterm * unitk_lamda[2] * unitk_lamda[2];
-      vg[kcount][3] = 0.0;
-      vg[kcount][4] = 0.0;
-      vg[kcount][5] = 0.0;
-      kcount++;
-    }
-  }
-}
-
-/* ----------------------------------------------------------------------
-   allocate memory that depends on # of K-vectors
-------------------------------------------------------------------------- */
-
-void EwaldConp::allocate() {
-  kxvecs = new int[kmax3d];
-  kyvecs = new int[kmax3d];
-  kzvecs = new int[kmax3d];
-
-  ug = new double[kmax3d];
-  memory->create(eg, kmax3d, 3, "ewald/conp:eg");
-  memory->create(vg, kmax3d, 6, "ewald/conp:vg");
-
-  sfacrl = new double[kmax3d];
-  sfacim = new double[kmax3d];
-  sfacrl_all = new double[kmax3d];
-  sfacim_all = new double[kmax3d];
-}
-
-/* ----------------------------------------------------------------------
-   deallocate memory that depends on # of K-vectors
-------------------------------------------------------------------------- */
-
-void EwaldConp::deallocate() {
-  delete[] kxvecs;
-  delete[] kyvecs;
-  delete[] kzvecs;
-
-  delete[] ug;
-  memory->destroy(eg);
-  memory->destroy(vg);
-
-  delete[] sfacrl;
-  delete[] sfacim;
-  delete[] sfacrl_all;
-  delete[] sfacim_all;
-}
-
-/* ----------------------------------------------------------------------
-   memory usage of local arrays
-------------------------------------------------------------------------- */
-
-double EwaldConp::memory_usage() {
-  double bytes = 3 * kmax3d * sizeof(int);
-  bytes += (1 + 3 + 6) * kmax3d * sizeof(double);
-  bytes += 4 * kmax3d * sizeof(double);
-  bytes += nmax * 3 * sizeof(double);
-  bytes += 2 * (2 * kmax + 1) * 3 * nmax * sizeof(double);
-  return bytes;
-}
-
-/* ----------------------------------------------------------------------
    group-group interactions
  ------------------------------------------------------------------------- */
 
@@ -1218,352 +889,10 @@ double EwaldConp::memory_usage() {
    compute the Ewald total long-range force and energy for groups A and B
  ------------------------------------------------------------------------- */
 
-void EwaldConp::compute_group_group(int groupbit_A, int groupbit_B,
-                                    int AA_flag) {
-  if (slabflag && triclinic)
-    error->all(FLERR,
-               "Cannot (yet) use K-space slab "
-               "correction with compute group/group for triclinic systems");
-
-  int i, k;
-
-  if (!group_allocate_flag) {
-    allocate_groups();
-    group_allocate_flag = 1;
-  }
-
-  e2group = 0.0;     // energy
-  f2group[0] = 0.0;  // force in x-direction
-  f2group[1] = 0.0;  // force in y-direction
-  f2group[2] = 0.0;  // force in z-direction
-
-  // partial and total structure factors for groups A and B
-
-  for (k = 0; k < kcount; k++) {
-    // group A
-
-    sfacrl_A[k] = 0.0;
-    sfacim_A[k] = 0.0;
-    sfacrl_A_all[k] = 0.0;
-    sfacim_A_all[k] = 0.0;
-
-    // group B
-
-    sfacrl_B[k] = 0.0;
-    sfacim_B[k] = 0.0;
-    sfacrl_B_all[k] = 0.0;
-    sfacim_B_all[k] = 0.0;
-  }
-
-  double *q = atom->q;
-  int nlocal = atom->nlocal;
-  int *mask = atom->mask;
-
-  int kx, ky, kz;
-  double cypz, sypz, exprl, expim;
-
-  // partial structure factors for groups A and B on each processor
-
-  for (k = 0; k < kcount; k++) {
-    kx = kxvecs[k];
-    ky = kyvecs[k];
-    kz = kzvecs[k];
-
-    for (i = 0; i < nlocal; i++) {
-      if (!((mask[i] & groupbit_A) && (mask[i] & groupbit_B)))
-        if (AA_flag) continue;
-
-      if ((mask[i] & groupbit_A) || (mask[i] & groupbit_B)) {
-        cypz = cs[ky][1][i] * cs[kz][2][i] - sn[ky][1][i] * sn[kz][2][i];
-        sypz = sn[ky][1][i] * cs[kz][2][i] + cs[ky][1][i] * sn[kz][2][i];
-        exprl = cs[kx][0][i] * cypz - sn[kx][0][i] * sypz;
-        expim = sn[kx][0][i] * cypz + cs[kx][0][i] * sypz;
-
-        // group A
-
-        if (mask[i] & groupbit_A) {
-          sfacrl_A[k] += q[i] * exprl;
-          sfacim_A[k] += q[i] * expim;
-        }
-
-        // group B
-
-        if (mask[i] & groupbit_B) {
-          sfacrl_B[k] += q[i] * exprl;
-          sfacim_B[k] += q[i] * expim;
-        }
-      }
-    }
-  }
-
-  // total structure factor by summing over procs
-
-  MPI_Allreduce(sfacrl_A, sfacrl_A_all, kcount, MPI_DOUBLE, MPI_SUM, world);
-  MPI_Allreduce(sfacim_A, sfacim_A_all, kcount, MPI_DOUBLE, MPI_SUM, world);
-
-  MPI_Allreduce(sfacrl_B, sfacrl_B_all, kcount, MPI_DOUBLE, MPI_SUM, world);
-  MPI_Allreduce(sfacim_B, sfacim_B_all, kcount, MPI_DOUBLE, MPI_SUM, world);
-
-  const double qscale = qqrd2e * scale;
-  double partial_group;
-
-  // total group A <--> group B energy
-  // self and boundary correction terms are in compute_group_group.cpp
-
-  for (k = 0; k < kcount; k++) {
-    partial_group =
-        sfacrl_A_all[k] * sfacrl_B_all[k] + sfacim_A_all[k] * sfacim_B_all[k];
-    e2group += ug[k] * partial_group;
-  }
-
-  e2group *= qscale;
-
-  // total group A <--> group B force
-
-  for (k = 0; k < kcount; k++) {
-    partial_group =
-        sfacim_A_all[k] * sfacrl_B_all[k] - sfacrl_A_all[k] * sfacim_B_all[k];
-    if (wireflag != 2) {
-      f2group[0] += eg[k][0] * partial_group;
-      f2group[1] += eg[k][1] * partial_group;
-    }
-    if (slabflag != 2) f2group[2] += eg[k][2] * partial_group;
-  }
-
-  f2group[0] *= qscale;
-  f2group[1] *= qscale;
-  f2group[2] *= qscale;
-
-  // 2d slab correction
-
-  if (slabflag == 1 || slabflag == 3)
-    slabcorr_groups(groupbit_A, groupbit_B, AA_flag);
-}
-
-/* ----------------------------------------------------------------------
-   Slab-geometry correction term to dampen inter-slab interactions between
-   periodically repeating slabs.  Yields good approximation to 2D Ewald if
-   adequate empty space is left between repeating slabs (J. Chem. Phys.
-   111, 3155).  Slabs defined here to be parallel to the xy plane. Also
-   extended to non-neutral systems (J. Chem. Phys. 131, 094107).
-------------------------------------------------------------------------- */
-
-void EwaldConp::slabcorr_groups(int groupbit_A, int groupbit_B, int AA_flag) {
-  if (slabflag == 3)
-    error->all(FLERR,
-               "Cannot (yet) use EW2D correction with compute group/group");
-
-  // compute local contribution to global dipole moment
-
-  double *q = atom->q;
-  double **x = atom->x;
-  double zprd = domain->zprd;
-  int *mask = atom->mask;
-  int nlocal = atom->nlocal;
-
-  double qsum_A = 0.0;
-  double qsum_B = 0.0;
-  double dipole_A = 0.0;
-  double dipole_B = 0.0;
-  double dipole_r2_A = 0.0;
-  double dipole_r2_B = 0.0;
-
-  for (int i = 0; i < nlocal; i++) {
-    if (!((mask[i] & groupbit_A) && (mask[i] & groupbit_B)))
-      if (AA_flag) continue;
-
-    if (mask[i] & groupbit_A) {
-      qsum_A += q[i];
-      dipole_A += q[i] * x[i][2];
-      dipole_r2_A += q[i] * x[i][2] * x[i][2];
-    }
-
-    if (mask[i] & groupbit_B) {
-      qsum_B += q[i];
-      dipole_B += q[i] * x[i][2];
-      dipole_r2_B += q[i] * x[i][2] * x[i][2];
-    }
-  }
-
-  // sum local contributions to get total charge and global dipole moment
-  //  for each group
-
-  double tmp;
-  MPI_Allreduce(&qsum_A, &tmp, 1, MPI_DOUBLE, MPI_SUM, world);
-  qsum_A = tmp;
-
-  MPI_Allreduce(&qsum_B, &tmp, 1, MPI_DOUBLE, MPI_SUM, world);
-  qsum_B = tmp;
-
-  MPI_Allreduce(&dipole_A, &tmp, 1, MPI_DOUBLE, MPI_SUM, world);
-  dipole_A = tmp;
-
-  MPI_Allreduce(&dipole_B, &tmp, 1, MPI_DOUBLE, MPI_SUM, world);
-  dipole_B = tmp;
-
-  MPI_Allreduce(&dipole_r2_A, &tmp, 1, MPI_DOUBLE, MPI_SUM, world);
-  dipole_r2_A = tmp;
-
-  MPI_Allreduce(&dipole_r2_B, &tmp, 1, MPI_DOUBLE, MPI_SUM, world);
-  dipole_r2_B = tmp;
-
-  // compute corrections
-
-  const double qscale = qqrd2e * scale;
-  const double efact = qscale * MY_2PI / volume;
-
-  e2group += efact * (dipole_A * dipole_B -
-                      0.5 * (qsum_A * dipole_r2_B + qsum_B * dipole_r2_A) -
-                      qsum_A * qsum_B * zprd * zprd / 12.0);
-
-  // add on force corrections
-
-  const double ffact = qscale * (-4.0 * MY_PI / volume);
-  f2group[2] += ffact * (qsum_A * dipole_B - qsum_B * dipole_A);
-}
-
-/* ----------------------------------------------------------------------
-   Wire-geometry correction term to dampen inter-wire interactions between
-   periodically repeating wires.  Yields good approximation to 1D Ewald if
-   adequate empty space is left between repeating wires (J. Mol. Struct.
-   704, 101). x and y are non-periodic.
-------------------------------------------------------------------------- */
-
-void EwaldConp::wirecorr_groups(int groupbit_A, int groupbit_B, int AA_flag) {
-  // compute local contribution to global dipole moment
-
-  double *q = atom->q;
-  double **x = atom->x;
-  double xprd = domain->xprd;
-  double yprd = domain->yprd;
-  int *mask = atom->mask;
-  int nlocal = atom->nlocal;
-
-  double qsum_A = 0.0;
-  double qsum_B = 0.0;
-  double xdipole_A = 0.0;
-  double xdipole_B = 0.0;
-  double xdipole_r2_A = 0.0;
-  double xdipole_r2_B = 0.0;
-  double ydipole_A = 0.0;
-  double ydipole_B = 0.0;
-  double ydipole_r2_A = 0.0;
-  double ydipole_r2_B = 0.0;
-
-  for (int i = 0; i < nlocal; i++) {
-    if (!((mask[i] & groupbit_A) && (mask[i] & groupbit_B)))
-      if (AA_flag) continue;
-
-    if (mask[i] & groupbit_A) {
-      qsum_A += q[i];
-      xdipole_A += q[i] * x[i][0];
-      xdipole_r2_A += q[i] * x[i][0] * x[i][0];
-      ydipole_A += q[i] * x[i][1];
-      ydipole_r2_A += q[i] * x[i][1] * x[i][1];
-    }
-
-    if (mask[i] & groupbit_B) {
-      qsum_B += q[i];
-      xdipole_B += q[i] * x[i][0];
-      xdipole_r2_B += q[i] * x[i][0] * x[i][0];
-      ydipole_B += q[i] * x[i][1];
-      ydipole_r2_B += q[i] * x[i][1] * x[i][1];
-    }
-  }
-
-  // sum local contributions to get total charge and global dipole moment
-  //  for each group
-
-  double tmp;
-  MPI_Allreduce(&qsum_A, &tmp, 1, MPI_DOUBLE, MPI_SUM, world);
-  qsum_A = tmp;
-
-  MPI_Allreduce(&qsum_B, &tmp, 1, MPI_DOUBLE, MPI_SUM, world);
-  qsum_B = tmp;
-
-  if (fabs(qsum_A + qsum_B) > SMALL)
-    error->all(FLERR,
-               "Cannot (yet) use K-space wire "
-               "correction with compute group/group for charged groups");
-
-  MPI_Allreduce(&xdipole_A, &tmp, 1, MPI_DOUBLE, MPI_SUM, world);
-  xdipole_A = tmp;
-  MPI_Allreduce(&ydipole_A, &tmp, 1, MPI_DOUBLE, MPI_SUM, world);
-  ydipole_A = tmp;
-
-  MPI_Allreduce(&xdipole_B, &tmp, 1, MPI_DOUBLE, MPI_SUM, world);
-  xdipole_B = tmp;
-  MPI_Allreduce(&ydipole_B, &tmp, 1, MPI_DOUBLE, MPI_SUM, world);
-  ydipole_B = tmp;
-
-  MPI_Allreduce(&xdipole_r2_A, &tmp, 1, MPI_DOUBLE, MPI_SUM, world);
-  xdipole_r2_A = tmp;
-  MPI_Allreduce(&ydipole_r2_A, &tmp, 1, MPI_DOUBLE, MPI_SUM, world);
-  ydipole_r2_A = tmp;
-
-  MPI_Allreduce(&xdipole_r2_B, &tmp, 1, MPI_DOUBLE, MPI_SUM, world);
-  xdipole_r2_B = tmp;
-  MPI_Allreduce(&ydipole_r2_B, &tmp, 1, MPI_DOUBLE, MPI_SUM, world);
-  ydipole_r2_B = tmp;
-
-  // compute corrections
-
-  const double qscale = qqrd2e * scale;
-  const double efact = qscale * MY_PI / volume;
-
-  // TODO do math for non-neutral wire geometries of Ballenegger et al.
-
-  e2group += efact * (xdipole_A * xdipole_B + ydipole_A * ydipole_B -
-                      0.5 * (qsum_A * xdipole_r2_B + qsum_A * ydipole_r2_B +
-                             qsum_B * xdipole_r2_A + qsum_B * ydipole_r2_A) -
-                      qsum_A * qsum_B * xprd * xprd / 12.0 -
-                      qsum_A * qsum_B * yprd * yprd / 12.0);
-
-  // add on force corrections
-
-  const double ffact = qscale * (-2.0 * MY_PI / volume);
-  f2group[1] += ffact * (qsum_A * xdipole_B + qsum_A * ydipole_B -
-                         qsum_B * xdipole_A - qsum_B * ydipole_A);
-}
-
-/* ----------------------------------------------------------------------
-   allocate group-group memory that depends on # of K-vectors
-------------------------------------------------------------------------- */
-
-void EwaldConp::allocate_groups() {
-  // group A
-
-  sfacrl_A = new double[kmax3d];
-  sfacim_A = new double[kmax3d];
-  sfacrl_A_all = new double[kmax3d];
-  sfacim_A_all = new double[kmax3d];
-
-  // group B
-
-  sfacrl_B = new double[kmax3d];
-  sfacim_B = new double[kmax3d];
-  sfacrl_B_all = new double[kmax3d];
-  sfacim_B_all = new double[kmax3d];
-}
-
-/* ----------------------------------------------------------------------
-   deallocate group-group memory that depends on # of K-vectors
-------------------------------------------------------------------------- */
-
-void EwaldConp::deallocate_groups() {
-  // group A
-
-  delete[] sfacrl_A;
-  delete[] sfacim_A;
-  delete[] sfacrl_A_all;
-  delete[] sfacim_A_all;
-
-  // group B
-
-  delete[] sfacrl_B;
-  delete[] sfacim_B;
-  delete[] sfacrl_B_all;
-  delete[] sfacim_B_all;
+void EwaldConp::compute_group_group(int /*groupbit_A*/, int /*groupbit_B*/,
+                                    int /*AA_flag*/) {
+  error->all(FLERR,
+             "Cannot (yet) use K-space ewald/conp with compute group/group");
 }
 
 /* ----------------------------------------------------------------------
@@ -1838,10 +1167,6 @@ void EwaldConp::compute_matrix_corr(bigint *imat, double **matrix) {
 
 /* ---------------------------------------------------------------------- */
 
-void EwaldConp::update_eikr() { update_eikr(false); }
-
-/* ---------------------------------------------------------------------- */
-
 void EwaldConp::update_eikr(bool force_update) {
   if (eikr_step < update->ntimestep || force_update) {
     // extend size of per-atom arrays if necessary
@@ -1850,16 +1175,13 @@ void EwaldConp::update_eikr(bool force_update) {
       memory->destroy3d_offset(cs, -kmax_created);
       memory->destroy3d_offset(sn, -kmax_created);
       nmax = atom->nmax;
-      memory->create(ek, nmax, 3, "ewald/conp:ek");
-      memory->create3d_offset(cs, -kmax, kmax, 3, nmax, "ewald/conp:cs");
-      memory->create3d_offset(sn, -kmax, kmax, 3, nmax, "ewald/conp:sn");
+      memory->create(ek, nmax, 3, "ewald:ek");
+      memory->create3d_offset(cs, -kmax, kmax, 3, nmax, "ewald:cs");
+      memory->create3d_offset(sn, -kmax, kmax, 3, nmax, "ewald:sn");
       kmax_created = kmax;
     }
     eikr_step = update->ntimestep;
-    if (triclinic == 0)
-      eik_dot_r();
-    else
-      eik_dot_r_triclinic();
+    eik_dot_r();
   }
 }
 
