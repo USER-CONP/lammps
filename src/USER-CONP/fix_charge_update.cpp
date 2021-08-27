@@ -10,7 +10,7 @@
 #include "comm.h"
 #include "compute.h"
 #include "compute_conp_matrix.h"
-#include "compute_conp_vector.h"
+#include "conp_vector.h"
 #include "error.h"
 #include "force.h"
 #include "group.h"
@@ -37,7 +37,7 @@ void dgetri_(const int *N, double *A, const int *lda, const int *ipiv,
 // fix fxupdate group1 charge_update pot1 eta couple group2 pot2
 FixChargeUpdate::FixChargeUpdate(LAMMPS *lmp, int narg, char **arg)
     : Fix(lmp, narg, arg) {
-  // array_compute = vector_compute = nullptr;
+  // array_compute = conp_vector = nullptr;
   f_inv = f_mat = f_vec = nullptr;
   read_inv = read_mat = false;
   symm = false;
@@ -131,18 +131,10 @@ FixChargeUpdate::FixChargeUpdate(LAMMPS *lmp, int narg, char **arg)
   igroup = group->find(union_group);
   if (igroup < 0) error->all(FLERR, "Failed to create union of groups");
   // construct computes
-  int const narg_compute = 4;
-  int iarg_compute = 0;
-  char **vector_arg = new char *[narg_compute];
-  vector_arg[iarg_compute++] = (char *)"conp_vec";
-  vector_arg[iarg_compute++] = (char *)group->names[igroup];
-  vector_arg[iarg_compute++] = (char *)"conp/vector";
-  vector_arg[iarg_compute++] = eta_str;
-  assert(iarg_compute == narg_compute);
-  vector_compute =
-      new LAMMPS_NS::ComputeConpVector(lmp, narg_compute, vector_arg);
-  delete[] vector_arg;
+  conp_vector = new ConpVector(lmp, igroup, eta);
   if (!(read_inv || read_mat)) {
+    int iarg_compute = 0;
+    int const narg_compute = 4;
     iarg_compute = 0;
     char **matrix_arg = new char *[narg_compute];
     matrix_arg[iarg_compute++] = (char *)"conp_mat";
@@ -158,7 +150,7 @@ FixChargeUpdate::FixChargeUpdate(LAMMPS *lmp, int narg, char **arg)
   // error checks
   assert(groups.size() == group_bits.size());
   assert(groups.size() == group_psi.size());
-  assert(igroup == vector_compute->igroup);
+  assert(igroup == conp_vector->igroup);
   if (!(read_mat || read_inv)) assert(igroup == array_compute->igroup);
   if (read_inv && read_mat)
     error->all(FLERR, "Cannot read matrix from two files");
@@ -187,14 +179,13 @@ FixChargeUpdate::FixChargeUpdate(LAMMPS *lmp, int narg, char **arg)
 /* ---------------------------------------------------------------------- */
 
 void FixChargeUpdate::init() {
-  vector_compute->init();
   if (!(read_mat || read_inv)) array_compute->init();
 }
 
 /* ---------------------------------------------------------------------- */
 
 void FixChargeUpdate::setup_post_neighbor() {
-  vector_compute->setup();
+  conp_vector->setup();
   if (!(read_mat || read_inv)) array_compute->setup();
   int const nlocal = atom->nlocal;
   int *mask = atom->mask;
@@ -248,9 +239,10 @@ void FixChargeUpdate::setup_post_neighbor() {
     }
     return ordered_mat;
   };
+  conp_vector->compute_vector();  
   if (comm->me == 0) {
     if (f_vec) {
-      double *b = vector_compute->vector;
+      double *b = conp_vector->vector;
       std::vector<std::vector<double>> vec(ngroup, std::vector<double>(1));
       for (int i = 0; i < ngroup; i++) {
         vec[group_idx[i]][0] = b[i];
@@ -428,9 +420,9 @@ void FixChargeUpdate::update_charges() {
   int *mask = atom->mask;
   std::vector<int> mpos = local_to_matrix();
   int const nall = atom->nlocal + atom->nghost;
-  vector_compute->compute_vector();
+  conp_vector->compute_vector();
   MPI_Barrier(world);
-  double *b = vector_compute->vector;
+  double *b = conp_vector->vector;
   MPI_Barrier(world);
   double mult_start = MPI_Wtime();
   for (int i = 0; i < nall; i++) {
@@ -544,14 +536,11 @@ double FixChargeUpdate::gausscorr(int eflag, bool fflag) {
       if (rsq < force->pair->cutsq[itype][jtype]) {
         double r2inv = 1.0 / rsq;
 
-        // if (rsq < cut_coulsq) { // TODO this is protected
         double r = sqrt(rsq);
         double eta_r_ij = eta_ij * r;
         double expm2 = exp(-eta_r_ij * eta_r_ij);
         double erfc_etar = erfc(eta_r_ij);
         double prefactor = qqrd2e * qtmp * q[j] / r;
-        //} else
-        // forcecoul = 0.0;
         energy_sr -= prefactor * erfc_etar;
 
         double forcecoul =
@@ -570,10 +559,7 @@ double FixChargeUpdate::gausscorr(int eflag, bool fflag) {
 
         double ecoul = 0.;
         if (eflag) {
-          // if (rsq < cut_coulsq) { // TODO this is protected
           ecoul = -prefactor * erfc_etar;
-          //} else
-          // ecoul = 0.0;
         }
 
         if (evflag) {
@@ -596,7 +582,7 @@ FixChargeUpdate::~FixChargeUpdate() {
     utils::logmesg(lmp, fmt::format("Update time: {}\n", update_time));
   }
   if (!(read_mat || read_inv)) delete array_compute;
-  delete vector_compute;
+  delete conp_vector;
 }
 
 /* ---------------------------------------------------------------------- */

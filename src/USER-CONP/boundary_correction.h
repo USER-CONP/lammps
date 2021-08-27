@@ -11,8 +11,8 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#ifndef LMP_IBC_H
-#define LMP_IBC_H
+#ifndef LMP_BOUNDARY_CORRECTION_H
+#define LMP_BOUNDARY_CORRECTION_H
 
 #include "pointers.h"
 

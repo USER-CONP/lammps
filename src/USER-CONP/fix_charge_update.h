@@ -37,7 +37,7 @@ class FixChargeUpdate : public Fix {
   FILE *f_inv, *f_vec, *f_mat;  // files for capacitance, eleastance and vector
   std::string input_file_inv, input_file_mat;
   class ComputeConpMatrix *array_compute;
-  class ComputeConpVector *vector_compute;
+  class ConpVector *conp_vector;
   std::vector<int> groups, group_bits;
   std::vector<double> group_psi;
   std::vector<double> psi;

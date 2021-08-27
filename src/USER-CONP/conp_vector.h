@@ -11,44 +11,29 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#ifdef COMPUTE_CLASS
-
-ComputeStyle(conp/vector, ComputeConpVector)
-
-#else
-
-#ifndef LMP_COMPUTE_COUL_VECTOR_H
-#define LMP_COMPUTE_COUL_VECTOR_H
-
-#include "compute.h"
 #include "conp_kspace.h"
+#include "pointers.h"
 
 namespace LAMMPS_NS {
 
-class ComputeConpVector : public Compute {
+class ConpVector : protected Pointers {
  public:
-  ComputeConpVector(class LAMMPS *, int, char **);
-  ~ComputeConpVector();
-  void init();
+  ConpVector(class LAMMPS *, int, double);
+  ~ConpVector();
   void setup();
-  void init_list(int, class NeighList *);
   void compute_vector();
+  double *vector;
 
  private:
+  int igroup, groupbit;
   bigint ngroup;
-  int recalc_every;
   double **cutsq;
   double g_ewald, eta;
-  int pairflag, kspaceflag, boundaryflag;
-  int overwrite, gaussians;
   std::vector<int> tag_to_iele;
   std::vector<bigint> mpos;
   class Pair *pair;
-  class NeighList *list;
+  // class NeighList *list;
   class ConpKspace *conp_kspace;
-  FILE *fp;
-
-  long filepos;
 
   void create_taglist();
   void update_mpos();
@@ -62,12 +47,9 @@ class ComputeConpVector : public Compute {
   double pair_time_total;
   double boundary_time_total;
   double b_time_total;
-
   double alloc_time_total;
   double mpos_time_total;
 };
 
 }  // namespace LAMMPS_NS
 
-#endif
-#endif

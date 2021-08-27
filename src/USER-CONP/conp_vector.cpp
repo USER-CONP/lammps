@@ -12,22 +12,21 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include "compute_conp_vector.h"
+#include "conp_vector.h"
 
-#include "assert.h"
 #include "atom.h"
 #include "comm.h"
 #include "error.h"
 #include "force.h"
 #include "group.h"
 #include "kspace.h"
-#include "memory.h"
 #include "neigh_list.h"
-#include "neigh_request.h"
-#include "neighbor.h"
+//#include "neigh_request.h"
+//#include "neighbor.h"
 #include "pair.h"
 
 using namespace LAMMPS_NS;
+using namespace std;
 
 #define EWALD_P 0.3275911
 #define A1 0.254829592
@@ -36,112 +35,26 @@ using namespace LAMMPS_NS;
 #define A4 -1.453152027
 #define A5 1.061405429
 
-ComputeConpVector::ComputeConpVector(LAMMPS *lmp, int narg, char **arg)
-    : Compute(lmp, narg, arg), fp(nullptr) {
-  if (narg < 4) error->all(FLERR, "Illegal compute coul/vector command");
+ConpVector::ConpVector(LAMMPS *lmp, int igroup, double eta) : Pointers(lmp) {
+  this->igroup = igroup;
+  groupbit = group->bitmask[igroup];
+  ngroup = group->count(igroup);
+  vector = new double[ngroup]();  // init to zero
+  this->eta = eta;
 
-  vector_flag = 1;
-  size_array_cols = 0;
-  size_array_rows = 0;
-  size_array_rows_variable = 0;
-  extarray = 0;
-
-  fp = nullptr;
-  vector = nullptr;
-
-  pairflag = 1;
-  kspaceflag = 1;
-  boundaryflag = 1;  // include infite boundary correction term
-  gaussians = 1;
-  recalc_every = 0;
-  overwrite = 1;
-
-  g_ewald = 0.0;
-
-  eta =
-      utils::numeric(FLERR, arg[3], false, lmp);  // TODO infer from pair_style!
-
-  int iarg = 4;
-  while (iarg < narg) {
-    if (strcmp(arg[iarg], "pair") == 0) {
-      if (iarg + 2 > narg)
-        error->all(FLERR, "Illegal compute coul/vector command");
-      if (strcmp(arg[iarg + 1], "yes") == 0)
-        pairflag = 1;
-      else if (strcmp(arg[iarg + 1], "no") == 0)
-        pairflag = 0;
-      else
-        error->all(FLERR, "Illegal compute coul/vector command");
-      iarg += 2;
-    } else if (strcmp(arg[iarg], "kspace") == 0) {
-      if (iarg + 2 > narg)
-        error->all(FLERR, "Illegal compute coul/vector command");
-      if (strcmp(arg[iarg + 1], "yes") == 0)
-        kspaceflag = 1;
-      else if (strcmp(arg[iarg + 1], "no") == 0)
-        kspaceflag = 0;
-      else
-        error->all(FLERR, "Illegal compute coul/vector command");
-      iarg += 2;
-    } else if (strcmp(arg[iarg], "boundary") == 0) {
-      if (iarg + 2 > narg)
-        error->all(FLERR, "Illegal compute coul/vector command");
-      if (strcmp(arg[iarg + 1], "yes") == 0)
-        boundaryflag = 1;
-      else if (strcmp(arg[iarg + 1], "no") == 0)
-        boundaryflag = 0;
-      else
-        error->all(FLERR, "Illegal compute coul/vector command");
-      iarg += 2;
-    } else if (strcmp(arg[iarg], "overwrite") ==
-               0) {  // TODO  if vector is recalculated overwrite or append
-                     // output
-      if (iarg + 2 > narg)
-        error->all(FLERR, "Illegal compute coul/vector command");
-      if (strcmp(arg[iarg + 1], "yes") == 0)
-        overwrite = 1;
-      else if (strcmp(arg[iarg + 1], "no") == 0)
-        overwrite = 0;
-      else
-        error->all(FLERR, "Illegal compute coul/vector command");
-      iarg += 2;
-    } else if (strcmp(arg[iarg], "file") == 0) {
-      if (iarg + 2 > narg)
-        error->all(FLERR, "Illegal compute coul/vector command");
-      if (comm->me == 0) {
-        fp = fopen(arg[iarg + 1], "w");
-        if (fp == nullptr)
-          error->one(FLERR,
-                     fmt::format("Cannot open compute coul/vector file {}: {}",
-                                 arg[iarg + 1], utils::getsyserror()));
-      }
-      iarg += 2;
-    } else
-      error->all(FLERR, "Illegal compute coul/vector command");
-  }
-
-  // print file comment lines
-
-  if (fp && comm->me == 0) {
-    clearerr(fp);
-    fprintf(fp, "# Constant potential coulomb vector\n");
-    if (ferror(fp)) error->one(FLERR, "Error writing file header");
-    filepos = ftell(fp);
-  }
   setup_time_total = 0;
   reduce_time_total = 0;
   kspace_time_total = 0;
   pair_time_total = 0;
   boundary_time_total = 0;
   b_time_total = 0;
-
   alloc_time_total = 0;
   mpos_time_total = 0;
 }
 
 /* ---------------------------------------------------------------------- */
 
-ComputeConpVector::~ComputeConpVector() {
+ConpVector::~ConpVector() {
   if (comm->me == 0) {
     utils::logmesg(lmp, fmt::format("B time: {}\n", b_time_total));
     utils::logmesg(lmp, fmt::format("B kspace time: {}\n", kspace_time_total));
@@ -154,70 +67,40 @@ ComputeConpVector::~ComputeConpVector() {
     utils::logmesg(lmp, fmt::format("B mpos time: {}\n", mpos_time_total));
   }
   delete[] vector;
-  if (fp && comm->me == 0) fclose(fp);
 }
 
 /* ---------------------------------------------------------------------- */
 
-void ComputeConpVector::init_list(int /*id*/, NeighList *ptr) { list = ptr; }
+// void ConpVector::init_list(int [>id<], NeighList *ptr) { list = ptr; }
 
 /* ---------------------------------------------------------------------- */
 
-void ComputeConpVector::init() {
-  // if non-hybrid, then error if single_enable = 0
-  // if hybrid, let hybrid determine if sub-style sets single_enable = 0
-
+void ConpVector::setup() {
   // error if Kspace style does not compute coul/vectr interactions
-
-  if ((boundaryflag || kspaceflag) && force->kspace == nullptr)
-    error->all(FLERR, "No Kspace style defined for compute coul/vectr");
+  if (force->kspace == nullptr)
+    error->all(FLERR, "No Kspace style defined for conp vector");
 
   // check if coul pair style is active, no need for single() since done
   // explicitly
+  int itmp;
+  double *p_cutoff = (double *)force->pair->extract("cut_coul", itmp);
+  if (p_cutoff == nullptr)
+    error->all(FLERR, "compute conp vector is incompatible with Pair style");
+  pair = force->pair;
+  cutsq = force->pair->cutsq;
 
-  if (pairflag) {
-    int itmp;
-    double *p_cutoff = (double *)force->pair->extract("cut_coul", itmp);
-    if (p_cutoff == nullptr)
-      error->all(FLERR, "compute coul/vector is incompatible with Pair style");
-    pair = force->pair;
-    cutsq = force->pair->cutsq;
-  } else
-    pair = nullptr;
+  conp_kspace = dynamic_cast<ConpKspace *>(force->kspace);
+  if (conp_kspace == nullptr)
+    error->all(FLERR, "Kspace does not implement ConpKspace");
+  g_ewald = force->kspace->g_ewald;
 
-  if (boundaryflag || kspaceflag) {
-    //kspace = force->kspace;
-    conp_kspace = dynamic_cast<ConpKspace *>(force->kspace);
-    if (conp_kspace == nullptr) 
-      error->all(FLERR, "Kspace does not implement ConpKspace");
-    g_ewald = force->kspace->g_ewald;
-  } else
-    conp_kspace = nullptr;
-
-  // need an occasional half neighbor list
-
-  if (pairflag) {
-    int irequest = neighbor->request(this, instance_me);
-    neighbor->requests[irequest]->pair = 0;
-    neighbor->requests[irequest]->compute = 1;
-    neighbor->requests[irequest]->occasional = 1;
-  }
-}
-
-/* ---------------------------------------------------------------------- */
-
-void ComputeConpVector::setup() {
-  ngroup = group->count(igroup);
-
-  // TODO could be useful to assign homogenously all atoms in both groups to
-  // all procs for calculating vector to distribute evenly the workload
-  vector = new double[ngroup]();  // init to zero
   // assign atom tags to vector locations and vice versa
   create_taglist();
 }
+
 /* ---------------------------------------------------------------------- */
 
-void ComputeConpVector::compute_vector() {
+void ConpVector::compute_vector() {
   MPI_Barrier(world);
   double start_time = MPI_Wtime();
   // setup
@@ -228,17 +111,17 @@ void ComputeConpVector::compute_vector() {
   setup_time_total += MPI_Wtime() - setup_start_time;
   // pair
   double pair_start_time = MPI_Wtime();
-  if (pairflag) pair_contribution();
+  pair_contribution();
   MPI_Barrier(world);
   pair_time_total += MPI_Wtime() - pair_start_time;
   // kspace
   double kspace_start_time = MPI_Wtime();
-  if (kspaceflag) conp_kspace->compute_vector(&mpos[0], vector);
+  conp_kspace->compute_vector(&mpos[0], vector);
   MPI_Barrier(world);
   kspace_time_total += MPI_Wtime() - kspace_start_time;
   // boundary
   double boundary_start_time = MPI_Wtime();
-  if (boundaryflag) conp_kspace->compute_vector_corr(&mpos[0], vector);
+  conp_kspace->compute_vector_corr(&mpos[0], vector);
   MPI_Barrier(world);
   boundary_time_total += MPI_Wtime() - boundary_start_time;
   // reduce
@@ -251,12 +134,13 @@ void ComputeConpVector::compute_vector() {
 
 /* ---------------------------------------------------------------------- */
 
-void ComputeConpVector::pair_contribution() {
+void ConpVector::pair_contribution() {
   double **x = atom->x;
   double *q = atom->q;
   int *type = atom->type;
   int *mask = atom->mask;
-  neighbor->build_one(list);
+  NeighList *list = pair->list;
+  // neighbor->build_one(list); // TODO build automatically?
   int const nlocal = atom->nlocal;
   int const inum = list->inum;
   int *ilist = list->ilist;
@@ -286,14 +170,8 @@ void ComputeConpVector::pair_contribution() {
       double const r = sqrt(rsq);
       double const rinv = 1.0 / r;
       double aij = rinv;
-      if (kspaceflag || boundaryflag) {
-        aij *= calc_erfc(g_ewald * r);
-        // TODO real-space gaussians?
-        if (gaussians) {
-          // TODO infer eta from coeffs of pair coul/long/gauss
-          aij -= calc_erfc(eta * r) * rinv;
-        }
-      }
+      aij *= calc_erfc(g_ewald * r);
+      aij -= calc_erfc(eta * r) * rinv;
       if (!(newton_pair || j < nlocal)) aij *= 0.5;
       if (i_in_electrode) {
         vector[mpos[i]] += aij * q[j];
@@ -305,7 +183,7 @@ void ComputeConpVector::pair_contribution() {
 }
 /* ---------------------------------------------------------------------- */
 
-void ComputeConpVector::create_taglist() {
+void ConpVector::create_taglist() {
   // assign a tag to each matrix index
 
   int *mask = atom->mask;
@@ -344,7 +222,7 @@ void ComputeConpVector::create_taglist() {
 
 /* ---------------------------------------------------------------------- */
 
-void ComputeConpVector::update_mpos() {
+void ConpVector::update_mpos() {
   MPI_Barrier(world);
   double alloc_start = MPI_Wtime();
   int const nall = atom->nlocal + atom->nghost;
@@ -367,7 +245,7 @@ void ComputeConpVector::update_mpos() {
 
 /* ---------------------------------------------------------------------- */
 
-double ComputeConpVector::calc_erfc(double x) {
+double ConpVector::calc_erfc(double x) {
   double expm2 = exp(-x * x);
   double t = 1.0 / (1.0 + EWALD_P * x);
   return t * (A1 + t * (A2 + t * (A3 + t * (A4 + t * A5)))) * expm2;
