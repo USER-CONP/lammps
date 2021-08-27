@@ -75,7 +75,7 @@ ConpVector::~ConpVector() {
 
 /* ---------------------------------------------------------------------- */
 
-void ConpVector::setup() {
+void ConpVector::setup(std::vector<int> tag_ids) {
   // error if Kspace style does not compute coul/vectr interactions
   if (force->kspace == nullptr)
     error->all(FLERR, "No Kspace style defined for conp vector");
@@ -85,7 +85,7 @@ void ConpVector::setup() {
   int itmp;
   double *p_cutoff = (double *)force->pair->extract("cut_coul", itmp);
   if (p_cutoff == nullptr)
-    error->all(FLERR, "compute conp vector is incompatible with Pair style");
+    error->all(FLERR, "conp vector is incompatible with Pair style");
   pair = force->pair;
   cutsq = force->pair->cutsq;
 
@@ -94,8 +94,7 @@ void ConpVector::setup() {
     error->all(FLERR, "Kspace does not implement ConpKspace");
   g_ewald = force->kspace->g_ewald;
 
-  // assign atom tags to vector locations and vice versa
-  create_taglist();
+  tag_to_iele = tag_ids;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -179,44 +178,6 @@ void ConpVector::pair_contribution() {
         vector[mpos[j]] += aij * q[i];
       }
     }
-  }
-}
-/* ---------------------------------------------------------------------- */
-
-void ConpVector::create_taglist() {
-  // assign a tag to each matrix index
-
-  int *mask = atom->mask;
-  int const nlocal = atom->nlocal;
-  int const nprocs = comm->nprocs;
-  tagint *tag = atom->tag;
-
-  std::vector<int> taglist_local;
-  for (int i = 0; i < nlocal; i++) {
-    if (mask[i] & groupbit) taglist_local.push_back(tag[i]);
-  }
-  int igroupnum_local = taglist_local.size();
-
-  std::vector<int> idispls(nprocs);
-  std::vector<int> igroupnum_list(nprocs);
-  MPI_Allgather(&igroupnum_local, 1, MPI_INT, &igroupnum_list.front(), 1,
-                MPI_INT, world);
-  idispls[0] = 0;
-  for (int i = 1; i < nprocs; i++) {
-    idispls[i] = idispls[i - 1] + igroupnum_list[i - 1];
-  }
-
-  std::vector<int> taglist = std::vector<int>(ngroup);
-  MPI_Allgatherv(&taglist_local.front(), igroupnum_local, MPI_LMP_TAGINT,
-                 &taglist.front(), &igroupnum_list.front(), &idispls.front(),
-                 MPI_LMP_TAGINT, world);
-  // must be sorted for compatibility with fix_charge_update
-  std::sort(taglist.begin(), taglist.end());
-
-  int const tag_max = taglist[ngroup - 1];
-  tag_to_iele = std::vector<int>(tag_max + 1, -1);
-  for (size_t i = 0; i < taglist.size(); i++) {
-    tag_to_iele[taglist[i]] = i;
   }
 }
 

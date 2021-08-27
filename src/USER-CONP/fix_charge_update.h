@@ -18,7 +18,7 @@ class FixChargeUpdate : public Fix {
   ~FixChargeUpdate();
   int setmask();
   // void post_constructor();
-  void init();
+  //void init();
   // void setup(int);
   void setup_post_neighbor();
   // void setup_pre_force(int);
@@ -36,7 +36,7 @@ class FixChargeUpdate : public Fix {
  private:
   FILE *f_inv, *f_vec, *f_mat;  // files for capacitance, eleastance and vector
   std::string input_file_inv, input_file_mat;
-  class ComputeConpMatrix *array_compute;
+  class ConpMatrix *array_compute;
   class ConpVector *conp_vector;
   std::vector<int> groups, group_bits;
   std::vector<double> group_psi;

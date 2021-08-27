@@ -20,7 +20,7 @@ class ConpVector : protected Pointers {
  public:
   ConpVector(class LAMMPS *, int, double);
   ~ConpVector();
-  void setup();
+  void setup(std::vector<int>);
   void compute_vector();
   double *vector;
 
@@ -35,7 +35,6 @@ class ConpVector : protected Pointers {
   // class NeighList *list;
   class ConpKspace *conp_kspace;
 
-  void create_taglist();
   void update_mpos();
 
   void pair_contribution();

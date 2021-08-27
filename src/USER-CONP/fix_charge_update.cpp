@@ -9,7 +9,7 @@
 #include "atom.h"
 #include "comm.h"
 #include "compute.h"
-#include "compute_conp_matrix.h"
+#include "conp_matrix.h"
 #include "conp_vector.h"
 #include "error.h"
 #include "force.h"
@@ -133,18 +133,7 @@ FixChargeUpdate::FixChargeUpdate(LAMMPS *lmp, int narg, char **arg)
   // construct computes
   conp_vector = new ConpVector(lmp, igroup, eta);
   if (!(read_inv || read_mat)) {
-    int iarg_compute = 0;
-    int const narg_compute = 4;
-    iarg_compute = 0;
-    char **matrix_arg = new char *[narg_compute];
-    matrix_arg[iarg_compute++] = (char *)"conp_mat";
-    matrix_arg[iarg_compute++] = (char *)group->names[igroup];
-    matrix_arg[iarg_compute++] = (char *)"conp/matrix";
-    matrix_arg[iarg_compute++] = eta_str;
-    assert(iarg_compute == narg_compute);
-    array_compute =
-        new LAMMPS_NS::ComputeConpMatrix(lmp, narg_compute, matrix_arg);
-    delete[] matrix_arg;
+    array_compute = new ConpMatrix(lmp, igroup, eta);
   }
 
   // error checks
@@ -176,20 +165,15 @@ FixChargeUpdate::FixChargeUpdate(LAMMPS *lmp, int narg, char **arg)
   ngroup = group->count(igroup);
 }
 
-/* ---------------------------------------------------------------------- */
-
-void FixChargeUpdate::init() {
-  if (!(read_mat || read_inv)) array_compute->init();
-}
 
 /* ---------------------------------------------------------------------- */
 
 void FixChargeUpdate::setup_post_neighbor() {
-  conp_vector->setup();
-  if (!(read_mat || read_inv)) array_compute->setup();
   int const nlocal = atom->nlocal;
   int *mask = atom->mask;
   create_taglist();
+  conp_vector->setup(tag_to_iele);
+  if (!(read_mat || read_inv)) array_compute->setup(tag_to_iele);
 
   // setup psi with target potentials
   std::vector<int> mpos = local_to_matrix();
@@ -239,7 +223,7 @@ void FixChargeUpdate::setup_post_neighbor() {
     }
     return ordered_mat;
   };
-  conp_vector->compute_vector();  
+  conp_vector->compute_vector();
   if (comm->me == 0) {
     if (f_vec) {
       double *b = conp_vector->vector;
