@@ -25,7 +25,6 @@
 #include <iostream>
 
 #include "angle.h"
-#include "assert.h"
 #include "atom.h"
 #include "bond.h"
 #include "comm.h"
@@ -69,9 +68,11 @@ enum { FORWARD_IK, FORWARD_AD, FORWARD_IK_PERATOM, FORWARD_AD_PERATOM };
 /* ---------------------------------------------------------------------- */
 
 PPPMConp::PPPMConp(LAMMPS *lmp)
-    : PPPM(lmp), ConpKspace(),
+    : PPPM(lmp),
+      ConpKspace(),
       electrolyte_density_brick(nullptr),
       electrolyte_density_fft(nullptr) {
+  group_group_enable = 0;
   electrolyte_density_brick = nullptr;
   electrolyte_density_fft = nullptr;
 }
@@ -100,23 +101,9 @@ void PPPMConp::init() {
   // error check
 
   triclinic_check();
-
-  if (triclinic != domain->triclinic)
-    error->all(FLERR,
-               "Must redefine kspace_style after changing to triclinic box");
-
-  if (domain->triclinic && differentiation_flag == 1)
-    error->all(FLERR,
-               "Cannot (yet) use PPPM/conp with triclinic box "
-               "and kspace_modify diff ad");
-  if (domain->triclinic && slabflag)
-    error->all(FLERR,
-               "Cannot (yet) use PPPM/conp with triclinic box and "
-               "slab correction");
-  if (domain->triclinic && wireflag)
-    error->all(FLERR,
-               "Cannot (yet) use PPPM/conp with triclinic box and "
-               "wire correction");
+  triclinic = domain->triclinic;
+  if (triclinic)
+    error->all(FLERR, "Cannot (yet) use PPPM/conp with triclinic box ");
   if (domain->dimension == 2)
     error->all(FLERR, "Cannot use PPPM/conp with 2d simulation");
 
@@ -146,7 +133,6 @@ void PPPMConp::init() {
 
   // extract short-range Coulombic cutoff from pair style
 
-  triclinic = domain->triclinic;
   pair_check();
 
   int itmp = 0;
@@ -303,12 +289,6 @@ void PPPMConp::init() {
 ------------------------------------------------------------------------- */
 
 void PPPMConp::setup() {
-  if (triclinic) {
-    error->all(FLERR, "Cannot (yet) use pppm/conp with triclinic systems ");
-    //setup_triclinic();
-    //return;
-  }
-
   // perform some checks to avoid illegal boundaries with read_data
 
   if (slabflag == 0 && wireflag == 0 && domain->nonperiodic > 0)
@@ -331,10 +311,7 @@ void PPPMConp::setup() {
   // adjust z dimension for 2d slab PPPM
   // z dimension for 3d PPPM is zprd since slab_volfactor = 1.0
 
-  if (triclinic == 0)
-    prd = domain->prd;
-  else
-    prd = domain->prd_lamda;
+  prd = domain->prd;
 
   double xprd = prd[0];
   double yprd = prd[1];
@@ -408,87 +385,6 @@ void PPPMConp::setup() {
     compute_gf_ad();
   else
     compute_gf_ik();
-}
-
-/* ----------------------------------------------------------------------
-   adjust PPPM coeffs, called initially and whenever volume has changed
-   for a triclinic system
-------------------------------------------------------------------------- */
-
-void PPPMConp::setup_triclinic() {
-  int i, j, k, n;
-  double *prd;
-
-  // volume-dependent factors
-  // adjust z dimension for 2d slab PPPM
-  // z dimension for 3d PPPM is zprd since slab_volfactor = 1.0
-
-  prd = domain->prd;
-
-  double xprd = prd[0];
-  double yprd = prd[1];
-  double zprd = prd[2];
-  double xprd_wire = xprd * wire_volfactor;
-  double yprd_wire = yprd * wire_volfactor;
-  double zprd_slab = zprd * slab_volfactor;
-  volume = xprd_wire * yprd_wire * zprd_slab;
-
-  // use lamda (0-1) coordinates
-
-  delxinv = nx_pppm;
-  delyinv = ny_pppm;
-  delzinv = nz_pppm;
-  delvolinv = delxinv * delyinv * delzinv / volume;
-
-  // fkx,fky,fkz for my FFT grid pts
-
-  n = 0;
-  for (k = nzlo_fft; k <= nzhi_fft; k++) {
-    // TODO int division intentional?
-    int per_k = k - nz_pppm * (2 * k / nz_pppm);
-    for (j = nylo_fft; j <= nyhi_fft; j++) {
-      int per_j = j - ny_pppm * (2 * j / ny_pppm);
-      for (i = nxlo_fft; i <= nxhi_fft; i++) {
-        int per_i = i - nx_pppm * (2 * i / nx_pppm);
-
-        double unitk_lamda[3];
-        unitk_lamda[0] = 2.0 * MY_PI * per_i;
-        unitk_lamda[1] = 2.0 * MY_PI * per_j;
-        unitk_lamda[2] = 2.0 * MY_PI * per_k;
-        x2lamdaT(&unitk_lamda[0], &unitk_lamda[0]);
-        fkx[n] = unitk_lamda[0];
-        fky[n] = unitk_lamda[1];
-        fkz[n] = unitk_lamda[2];
-        n++;
-      }
-    }
-  }
-
-  // virial coefficients
-
-  double sqk, vterm;
-
-  for (n = 0; n < nfft; n++) {
-    sqk = fkx[n] * fkx[n] + fky[n] * fky[n] + fkz[n] * fkz[n];
-    if (sqk == 0.0) {
-      vg[n][0] = 0.0;
-      vg[n][1] = 0.0;
-      vg[n][2] = 0.0;
-      vg[n][3] = 0.0;
-      vg[n][4] = 0.0;
-      vg[n][5] = 0.0;
-    } else {
-      vterm = -2.0 * (1.0 / sqk + 0.25 / (g_ewald * g_ewald));
-      vg[n][0] = 1.0 + vterm * fkx[n] * fkx[n];
-      vg[n][1] = 1.0 + vterm * fky[n] * fky[n];
-      vg[n][2] = 1.0 + vterm * fkz[n] * fkz[n];
-      vg[n][3] = vterm * fkx[n] * fky[n];
-      vg[n][4] = vterm * fkx[n] * fkz[n];
-      vg[n][5] = vterm * fky[n] * fkz[n];
-    }
-  }
-
-  compute_gf_ik_triclinic();
 }
 
 /* ----------------------------------------------------------------------
@@ -653,9 +549,6 @@ void PPPMConp::compute(int eflag, int vflag) {
   }
 
   boundcorr->compute_corr(qsum, eflag_atom, eflag_global, energy, eatom);
-
-  // convert atoms back from lamda to box coords
-  if (triclinic) domain->lamda2x(atom->nlocal);
 }
 
 /* ----------------------------------------------------------------------
@@ -663,13 +556,7 @@ void PPPMConp::compute(int eflag, int vflag) {
 void PPPMConp::start_compute() {
   if (compute_step < update->ntimestep) {
     if (compute_step == -1) setup();
-    // convert atoms from box to lamda coords
-    if (triclinic == 0)
-      boxlo = domain->boxlo;
-    else {
-      boxlo = domain->boxlo_lamda;
-      domain->x2lamda(atom->nlocal);
-    }
+    boxlo = domain->boxlo;
     // extend size of per-atom arrays if necessary
     if (atom->nmax > nmax) {
       memory->destroy(part2grid);
@@ -904,12 +791,6 @@ void PPPMConp::compute_matrix(bigint *imat, double **matrix) {
             int miz0 = miz - nzlo_out;
             int miy0 = miy - nylo_out;
             int mix0 = mix - nxlo_out;
-            assert(miz0 >= 0);
-            assert(miy0 >= 0);
-            assert(mix0 >= 0);
-            assert(miz0 < nz_conp);
-            assert(miy0 < ny_conp);
-            assert(mix0 < nx_conp);
             aij += ix0 *
                    gw[jpos][nx_conp * ny_conp * miz0 + nx_conp * miy0 + mix0];
           }
@@ -979,15 +860,9 @@ void PPPMConp::deallocate() {
   memory->destroy(work2);
   memory->destroy(vg);
 
-  if (triclinic == 0) {
-    memory->destroy1d_offset(fkx, nxlo_fft);
-    memory->destroy1d_offset(fky, nylo_fft);
-    memory->destroy1d_offset(fkz, nzlo_fft);
-  } else {
-    memory->destroy(fkx);
-    memory->destroy(fky);
-    memory->destroy(fkz);
-  }
+  memory->destroy1d_offset(fkx, nxlo_fft);
+  memory->destroy1d_offset(fky, nylo_fft);
+  memory->destroy1d_offset(fkz, nzlo_fft);
 
   memory->destroy(gf_b);
   if (stagger_flag) gf_b = nullptr;
@@ -1101,19 +976,6 @@ void PPPMConp::set_grid_global() {
         h_z = zprd_slab / nz_pppm;
       }
     }
-
-    // scale grid for triclinic skew
-
-    if (triclinic) {
-      double tmp[3];
-      tmp[0] = nx_pppm / xprd;
-      tmp[1] = ny_pppm / yprd;
-      tmp[2] = nz_pppm / zprd;
-      lamda2xT(&tmp[0], &tmp[0]);
-      nx_pppm = static_cast<int>(tmp[0]) + 1;
-      ny_pppm = static_cast<int>(tmp[1]) + 1;
-      nz_pppm = static_cast<int>(tmp[2]) + 1;
-    }
   }
 
   // boost grid size until it is factorable
@@ -1122,20 +984,9 @@ void PPPMConp::set_grid_global() {
   while (!factorable(ny_pppm)) ny_pppm++;
   while (!factorable(nz_pppm)) nz_pppm++;
 
-  if (triclinic == 0) {
-    h_x = xprd_wire / nx_pppm;
-    h_y = yprd_wire / ny_pppm;
-    h_z = zprd_slab / nz_pppm;
-  } else {
-    double tmp[3];
-    tmp[0] = nx_pppm;
-    tmp[1] = ny_pppm;
-    tmp[2] = nz_pppm;
-    x2lamdaT(&tmp[0], &tmp[0]);
-    h_x = 1.0 / tmp[0];
-    h_y = 1.0 / tmp[1];
-    h_z = 1.0 / tmp[2];
-  }
+  h_x = xprd_wire / nx_pppm;
+  h_y = yprd_wire / ny_pppm;
+  h_z = zprd_slab / nz_pppm;
 
   if (nx_pppm >= OFFSET || ny_pppm >= OFFSET || nz_pppm >= OFFSET)
     error->all(FLERR, "PPPM/conp grid is too large");
@@ -1341,17 +1192,10 @@ void PPPMConp::set_grid_local() {
 
   double *prd, *sublo, *subhi;
 
-  if (triclinic == 0) {
-    prd = domain->prd;
-    boxlo = domain->boxlo;
-    sublo = domain->sublo;
-    subhi = domain->subhi;
-  } else {
-    prd = domain->prd_lamda;
-    boxlo = domain->boxlo_lamda;
-    sublo = domain->sublo_lamda;
-    subhi = domain->subhi_lamda;
-  }
+  prd = domain->prd;
+  boxlo = domain->boxlo;
+  sublo = domain->sublo;
+  subhi = domain->subhi;
 
   double xprd = prd[0];
   double yprd = prd[1];
@@ -1362,10 +1206,7 @@ void PPPMConp::set_grid_local() {
 
   double dist[3] = {0.0, 0.0, 0.0};
   double cuthalf = 0.5 * neighbor->skin + qdist;
-  if (triclinic == 0)
-    dist[0] = dist[1] = dist[2] = cuthalf;
-  else
-    kspacebbox(cuthalf, &dist[0]);
+  dist[0] = dist[1] = dist[2] = cuthalf;
 
   int nlo, nhi;
   nlo = nhi = 0;
@@ -1722,434 +1563,12 @@ void PPPMConp::make_electrolyte_rho(bigint *imat) {
 }
 
 /* ----------------------------------------------------------------------
-   interpolate from grid to get electric field & force on my particles
--------------------------------------------------------------------------
-*/
-
-void PPPMConp::fieldforce() {
-  if (differentiation_flag == 1)
-    fieldforce_ad();
-  else
-    fieldforce_ik();
-}
-
-/* ----------------------------------------------------------------------
-   interpolate from grid to get electric field & force on my particles for
-ik
--------------------------------------------------------------------------
-*/
-
-void PPPMConp::fieldforce_ik() {
-  int i, l, m, n, nx, ny, nz, mx, my, mz;
-  FFT_SCALAR dx, dy, dz, x0, y0, z0;
-  FFT_SCALAR ekx, eky, ekz;
-
-  // loop over my charges, interpolate electric field from nearby grid
-  // points (nx,ny,nz) = global coords of grid pt to "lower left" of
-  // charge (dx,dy,dz) = distance to "lower left" grid pt (mx,my,mz) =
-  // global coords of moving stencil pt ek = 3 components of E-field on
-  // particle
-
-  double *q = atom->q;
-  double **x = atom->x;
-  double **f = atom->f;
-
-  int nlocal = atom->nlocal;
-
-  for (i = 0; i < nlocal; i++) {
-    nx = part2grid[i][0];
-    ny = part2grid[i][1];
-    nz = part2grid[i][2];
-    dx = nx + shiftone - (x[i][0] - boxlo[0]) * delxinv;
-    dy = ny + shiftone - (x[i][1] - boxlo[1]) * delyinv;
-    dz = nz + shiftone - (x[i][2] - boxlo[2]) * delzinv;
-
-    compute_rho1d(dx, dy, dz);
-
-    ekx = eky = ekz = ZEROF;
-    for (n = nlower; n <= nupper; n++) {
-      mz = n + nz;
-      z0 = rho1d[2][n];
-      for (m = nlower; m <= nupper; m++) {
-        my = m + ny;
-        y0 = z0 * rho1d[1][m];
-        for (l = nlower; l <= nupper; l++) {
-          mx = l + nx;
-          x0 = y0 * rho1d[0][l];
-          ekx -= x0 * vdx_brick[mz][my][mx];
-          eky -= x0 * vdy_brick[mz][my][mx];
-          ekz -= x0 * vdz_brick[mz][my][mx];
-        }
-      }
-    }
-
-    // convert E-field to force
-
-    const double qfactor = qqrd2e * scale * q[i];
-    if (wireflag != 2) {
-      f[i][0] += qfactor * ekx;
-      f[i][1] += qfactor * eky;
-    }
-    if (slabflag != 2) f[i][2] += qfactor * ekz;
-  }
-}
-
-/* ----------------------------------------------------------------------
-   interpolate from grid to get electric field & force on my particles for
-ad
--------------------------------------------------------------------------
-*/
-
-void PPPMConp::fieldforce_ad() {
-  int i, l, m, n, nx, ny, nz, mx, my, mz;
-  FFT_SCALAR dx, dy, dz;
-  FFT_SCALAR ekx, eky, ekz;
-  double s1, s2, s3;
-  double sf = 0.0;
-  double *prd;
-
-  prd = domain->prd;
-  double xprd = prd[0];
-  double yprd = prd[1];
-  double zprd = prd[2];
-
-  double hx_inv = nx_pppm / xprd;
-  double hy_inv = ny_pppm / yprd;
-  double hz_inv = nz_pppm / zprd;
-
-  // loop over my charges, interpolate electric field from nearby grid
-  // points (nx,ny,nz) = global coords of grid pt to "lower left" of
-  // charge (dx,dy,dz) = distance to "lower left" grid pt (mx,my,mz) =
-  // global coords of moving stencil pt ek = 3 components of E-field on
-  // particle
-
-  double *q = atom->q;
-  double **x = atom->x;
-  double **f = atom->f;
-
-  int nlocal = atom->nlocal;
-
-  for (i = 0; i < nlocal; i++) {
-    nx = part2grid[i][0];
-    ny = part2grid[i][1];
-    nz = part2grid[i][2];
-    dx = nx + shiftone - (x[i][0] - boxlo[0]) * delxinv;
-    dy = ny + shiftone - (x[i][1] - boxlo[1]) * delyinv;
-    dz = nz + shiftone - (x[i][2] - boxlo[2]) * delzinv;
-
-    compute_rho1d(dx, dy, dz);
-    compute_drho1d(dx, dy, dz);
-
-    ekx = eky = ekz = ZEROF;
-    for (n = nlower; n <= nupper; n++) {
-      mz = n + nz;
-      for (m = nlower; m <= nupper; m++) {
-        my = m + ny;
-        for (l = nlower; l <= nupper; l++) {
-          mx = l + nx;
-          ekx += drho1d[0][l] * rho1d[1][m] * rho1d[2][n] * u_brick[mz][my][mx];
-          eky += rho1d[0][l] * drho1d[1][m] * rho1d[2][n] * u_brick[mz][my][mx];
-          ekz += rho1d[0][l] * rho1d[1][m] * drho1d[2][n] * u_brick[mz][my][mx];
-        }
-      }
-    }
-    ekx *= hx_inv;
-    eky *= hy_inv;
-    ekz *= hz_inv;
-
-    // convert E-field to force and subtract self forces
-
-    const double qfactor = qqrd2e * scale;
-
-    s1 = x[i][0] * hx_inv;
-    s2 = x[i][1] * hy_inv;
-    s3 = x[i][2] * hz_inv;
-    sf = sf_coeff[0] * sin(2 * MY_PI * s1);
-    sf += sf_coeff[1] * sin(4 * MY_PI * s1);
-    sf *= 2 * q[i] * q[i];
-    if (wireflag != 2) f[i][0] += qfactor * (ekx * q[i] - sf);
-
-    sf = sf_coeff[2] * sin(2 * MY_PI * s2);
-    sf += sf_coeff[3] * sin(4 * MY_PI * s2);
-    sf *= 2 * q[i] * q[i];
-    if (wireflag != 2) f[i][1] += qfactor * (eky * q[i] - sf);
-
-    sf = sf_coeff[4] * sin(2 * MY_PI * s3);
-    sf += sf_coeff[5] * sin(4 * MY_PI * s3);
-    sf *= 2 * q[i] * q[i];
-    if (slabflag != 2) f[i][2] += qfactor * (ekz * q[i] - sf);
-  }
-}
-
-/* ----------------------------------------------------------------------
    group-group interactions
  -------------------------------------------------------------------------
 */
-
-/* ----------------------------------------------------------------------
-   compute the PPPM total long-range force and energy for groups A and B
- -------------------------------------------------------------------------
-*/
-
-void PPPMConp::compute_group_group(int groupbit_A, int groupbit_B,
-                                   int AA_flag) {
-  if ((wireflag || slabflag) && triclinic)
-    error->all(FLERR,
-               "Cannot (yet) use K-space slab or wire "
-               "correction with compute group/group for triclinic systems");
-
-  if (differentiation_flag)
-    error->all(FLERR,
-               "Cannot (yet) use kspace_modify "
-               "diff ad with compute group/group");
-
-  if (!group_allocate_flag) allocate_groups();
-
-  // convert atoms from box to lamda coords
-
-  if (triclinic == 0)
-    boxlo = domain->boxlo;
-  else {
-    boxlo = domain->boxlo_lamda;
-    domain->x2lamda(atom->nlocal);
-  }
-
-  e2group = 0.0;     // energy
-  f2group[0] = 0.0;  // force in x-direction
-  f2group[1] = 0.0;  // force in y-direction
-  f2group[2] = 0.0;  // force in z-direction
-
-  // map my particle charge onto my local 3d density grid
-
-  make_rho_groups(groupbit_A, groupbit_B, AA_flag);
-
-  // all procs communicate density values from their ghost cells
-  //   to fully sum contribution in their 3d bricks
-  // remap from 3d decomposition to FFT decomposition
-
-  // temporarily store and switch pointers so we can
-  //  use brick2fft() for groups A and B (without
-  //  writing an additional function)
-
-  FFT_SCALAR ***density_brick_real = density_brick;
-  FFT_SCALAR *density_fft_real = density_fft;
-
-  // group A
-
-  density_brick = density_A_brick;
-  density_fft = density_A_fft;
-
-  gc->reverse_comm_kspace(this, 1, sizeof(FFT_SCALAR), REVERSE_RHO, gc_buf1,
-                          gc_buf2, MPI_FFT_SCALAR);
-  brick2fft();
-
-  // group B
-
-  density_brick = density_B_brick;
-  density_fft = density_B_fft;
-
-  gc->reverse_comm_kspace(this, 1, sizeof(FFT_SCALAR), REVERSE_RHO, gc_buf1,
-                          gc_buf2, MPI_FFT_SCALAR);
-  brick2fft();
-
-  // switch back pointers
-
-  density_brick = density_brick_real;
-  density_fft = density_fft_real;
-
-  // compute potential gradient on my FFT grid and
-  //   portion of group-group energy/force on this proc's FFT grid
-
-  poisson_groups(AA_flag);
-
-  const double qscale = qqrd2e * scale;
-
-  // total group A <--> group B energy
-  // self and boundary correction terms are in compute_group_group.cpp
-
-  double e2group_all;
-  MPI_Allreduce(&e2group, &e2group_all, 1, MPI_DOUBLE, MPI_SUM, world);
-  e2group = e2group_all;
-
-  e2group *= qscale * 0.5 * volume;
-
-  // total group A <--> group B force
-
-  double f2group_all[3];
-  MPI_Allreduce(f2group, f2group_all, 3, MPI_DOUBLE, MPI_SUM, world);
-
-  f2group[0] = qscale * volume * f2group_all[0];
-  if (wireflag != 2) {
-    f2group[0] = qscale * volume * f2group_all[0];
-    f2group[1] = qscale * volume * f2group_all[1];
-  }
-  if (slabflag != 2) f2group[2] = qscale * volume * f2group_all[2];
-
-  // convert atoms back from lamda to box coords
-
-  if (triclinic) domain->lamda2x(atom->nlocal);
-
-  if (slabflag == 1) slabcorr_groups(groupbit_A, groupbit_B, AA_flag);
-
-  if (wireflag == 1) wirecorr_groups(groupbit_A, groupbit_B, AA_flag);
-}
-
-/* ----------------------------------------------------------------------
-   slab-geometry correction term to dampen inter-slab interactions between
-   periodically repeating slabs.  Yields good approximation to 2D Ewald if
-   adequate empty space is left between repeating slabs (J. Chem. Phys.
-   111, 3155).  Slabs defined here to be parallel to the xy plane. Also
-   extended to non-neutral systems (J. Chem. Phys. 131, 094107).
--------------------------------------------------------------------------
-*/
-
-void PPPMConp::slabcorr_groups(int groupbit_A, int groupbit_B, int AA_flag) {
-  // compute local contribution to global dipole moment
-
-  double *q = atom->q;
-  double **x = atom->x;
-  double zprd = domain->zprd;
-  int *mask = atom->mask;
-  int nlocal = atom->nlocal;
-
-  double qsum_A = 0.0;
-  double qsum_B = 0.0;
-  double dipole_A = 0.0;
-  double dipole_B = 0.0;
-  double dipole_r2_A = 0.0;
-  double dipole_r2_B = 0.0;
-
-  for (int i = 0; i < nlocal; i++) {
-    if (!((mask[i] & groupbit_A) && (mask[i] & groupbit_B)))
-      if (AA_flag) continue;
-
-    if (mask[i] & groupbit_A) {
-      qsum_A += q[i];
-      dipole_A += q[i] * x[i][2];
-      dipole_r2_A += q[i] * x[i][2] * x[i][2];
-    }
-
-    if (mask[i] & groupbit_B) {
-      qsum_B += q[i];
-      dipole_B += q[i] * x[i][2];
-      dipole_r2_B += q[i] * x[i][2] * x[i][2];
-    }
-  }
-
-  // sum local contributions to get total charge and global dipole moment
-  //  for each group
-
-  double tmp;
-  MPI_Allreduce(&qsum_A, &tmp, 1, MPI_DOUBLE, MPI_SUM, world);
-  qsum_A = tmp;
-
-  MPI_Allreduce(&qsum_B, &tmp, 1, MPI_DOUBLE, MPI_SUM, world);
-  qsum_B = tmp;
-
-  MPI_Allreduce(&dipole_A, &tmp, 1, MPI_DOUBLE, MPI_SUM, world);
-  dipole_A = tmp;
-
-  MPI_Allreduce(&dipole_B, &tmp, 1, MPI_DOUBLE, MPI_SUM, world);
-  dipole_B = tmp;
-
-  MPI_Allreduce(&dipole_r2_A, &tmp, 1, MPI_DOUBLE, MPI_SUM, world);
-  dipole_r2_A = tmp;
-
-  MPI_Allreduce(&dipole_r2_B, &tmp, 1, MPI_DOUBLE, MPI_SUM, world);
-  dipole_r2_B = tmp;
-
-  // compute corrections
-
-  const double qscale = qqrd2e * scale;
-  const double efact = qscale * MY_2PI / volume;
-
-  e2group += efact * (dipole_A * dipole_B -
-                      0.5 * (qsum_A * dipole_r2_B + qsum_B * dipole_r2_A) -
-                      qsum_A * qsum_B * zprd * zprd / 12.0);
-
-  // add on force corrections
-
-  const double ffact = qscale * (-4.0 * MY_PI / volume);
-  f2group[2] += ffact * (qsum_A * dipole_B - qsum_B * dipole_A);
-}
-
-/* ----------------------------------------------------------------------
-   TODO wire-geometry correction term to dampen inter-wire interactions
-between periodically repeating wires.  Yields good approximation to 2D
-Ewald if adequate empty space is left between repeating wires (J. Chem.
-Phys. 111, 3155).  Wires defined here to be parallel to the x axis. Also
-extended to non-neutral systems (J. Chem. Phys. 131, 094107).
--------------------------------------------------------------------------
-*/
-
-void PPPMConp::wirecorr_groups(int groupbit_A, int groupbit_B, int AA_flag) {
-  // compute local contribution to global dipole moment
-
-  double *q = atom->q;
-  double **x = atom->x;
-  double yprd = domain->yprd;
-  int *mask = atom->mask;
-  int nlocal = atom->nlocal;
-
-  double qsum_A = 0.0;
-  double qsum_B = 0.0;
-  double dipole_A = 0.0;
-  double dipole_B = 0.0;
-  double dipole_r2_A = 0.0;
-  double dipole_r2_B = 0.0;
-
-  for (int i = 0; i < nlocal; i++) {
-    if (!((mask[i] & groupbit_A) && (mask[i] & groupbit_B)))
-      if (AA_flag) continue;
-
-    if (mask[i] & groupbit_A) {
-      qsum_A += q[i];
-      dipole_A += q[i] * x[i][1];
-      dipole_r2_A += q[i] * x[i][1] * x[i][1];
-    }
-
-    if (mask[i] & groupbit_B) {
-      qsum_B += q[i];
-      dipole_B += q[i] * x[i][1];
-      dipole_r2_B += q[i] * x[i][1] * x[i][1];
-    }
-  }
-
-  // sum local contributions to get total charge and global dipole moment
-  //  for each group
-
-  double tmp;
-  MPI_Allreduce(&qsum_A, &tmp, 1, MPI_DOUBLE, MPI_SUM, world);
-  qsum_A = tmp;
-
-  MPI_Allreduce(&qsum_B, &tmp, 1, MPI_DOUBLE, MPI_SUM, world);
-  qsum_B = tmp;
-
-  MPI_Allreduce(&dipole_A, &tmp, 1, MPI_DOUBLE, MPI_SUM, world);
-  dipole_A = tmp;
-
-  MPI_Allreduce(&dipole_B, &tmp, 1, MPI_DOUBLE, MPI_SUM, world);
-  dipole_B = tmp;
-
-  MPI_Allreduce(&dipole_r2_A, &tmp, 1, MPI_DOUBLE, MPI_SUM, world);
-  dipole_r2_A = tmp;
-
-  MPI_Allreduce(&dipole_r2_B, &tmp, 1, MPI_DOUBLE, MPI_SUM, world);
-  dipole_r2_B = tmp;
-
-  // compute corrections
-
-  const double qscale = qqrd2e * scale;
-  const double efact = qscale * MY_PI / volume;
-
-  e2group += efact * (dipole_A * dipole_B -
-                      0.5 * (qsum_A * dipole_r2_B + qsum_B * dipole_r2_A) -
-                      qsum_A * qsum_B * yprd * yprd / 12.0);
-
-  // add on force corrections
-
-  const double ffact = qscale * (-2.0 * MY_PI / volume);
-  f2group[1] += ffact * (qsum_A * dipole_B - qsum_B * dipole_A);
+void PPPMConp::compute_group_group(int /*groupbit_A*/, int /*groupbit_B*/,
+                                   int /*AA_flag*/) {
+  error->all(FLERR, "group group interaction not implemented in pppm/conp yet");
 }
 
 void PPPMConp::compute_matrix_corr(bigint *imat, double **matrix) {

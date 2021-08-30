@@ -11,9 +11,6 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#ifndef LMP_IBC_SLAB_2D_H
-#define LMP_IBC_SLAB_2D_H
-
 #include "boundary_correction.h"
 
 namespace LAMMPS_NS {
@@ -27,4 +24,3 @@ class Slab2d : public BoundaryCorrection {
   void setup(double);
 };
 }  // namespace LAMMPS_NS
-#endif
