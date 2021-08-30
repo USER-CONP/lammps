@@ -165,7 +165,6 @@ FixChargeUpdate::FixChargeUpdate(LAMMPS *lmp, int narg, char **arg)
   ngroup = group->count(igroup);
 }
 
-
 /* ---------------------------------------------------------------------- */
 
 void FixChargeUpdate::setup_post_neighbor() {
@@ -313,6 +312,10 @@ void FixChargeUpdate::symmetrize() {
 /* ---------------------------------------------------------------------- */
 
 void FixChargeUpdate::create_taglist() {
+  // check tags are consecutive, to avoid huge tag_to_iele arrays
+  if (atom->tag_consecutive() == 0)
+    error->all(FLERR, "Atom IDs must be consecutive for fix charge_update");
+
   int *mask = atom->mask;
   int const nlocal = atom->nlocal;
   int const nprocs = comm->nprocs;

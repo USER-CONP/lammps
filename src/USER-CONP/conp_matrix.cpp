@@ -26,8 +26,6 @@
 #include "kspace.h"
 #include "math_const.h"
 #include "neigh_list.h"
-//#include "neigh_request.h"
-//#include "neighbor.h"
 #include "pair.h"
 
 using namespace LAMMPS_NS;
@@ -43,8 +41,9 @@ using namespace MathConst;
 
 /* ---------------------------------------------------------------------- */
 
-ConpMatrix::ConpMatrix(LAMMPS *lmp, int igroup, double eta) : Pointers(lmp) {
-  this->igroup = igroup;
+ConpMatrix::ConpMatrix(LAMMPS *lmp, int electrode_group, double eta)
+    : Pointers(lmp) {
+  igroup = electrode_group;  // group of all electrode atoms
   groupbit = group->bitmask[igroup];
   ngroup = group->count(igroup);
   array = new double *[ngroup];
@@ -62,7 +61,6 @@ ConpMatrix::~ConpMatrix() {
 /* ---------------------------------------------------------------------- */
 
 void ConpMatrix::setup(std::vector<int> tag_ids) {
-  // error if Kspace style does not compute coul/matrix interactions
   if (force->kspace == nullptr)
     error->all(FLERR, "No Kspace style defined for compute conp matrix");
 
@@ -129,10 +127,8 @@ void ConpMatrix::pair_contribution() {
   double etaij =
       eta * eta / sqrt(2.0 * eta * eta);  // see mw ewald theory eq. (29)-(30)
 
-  // invoke half neighbor list (will copy or build if necessary)
-  // neighbor->build_one(list);
+  // neighbor list will be ready because called from post_neighbor
   NeighList *list = pair->list;
-
   inum = list->inum;
   ilist = list->ilist;
   numneigh = list->numneigh;

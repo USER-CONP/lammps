@@ -289,9 +289,9 @@ void EwaldConp::setup() {
     memory->destroy3d_offset(cs, -kmax_created);
     memory->destroy3d_offset(sn, -kmax_created);
     nmax = atom->nmax;
-    memory->create(ek, nmax, 3, "ewald:ek");
-    memory->create3d_offset(cs, -kmax, kmax, 3, nmax, "ewald:cs");
-    memory->create3d_offset(sn, -kmax, kmax, 3, nmax, "ewald:sn");
+    memory->create(ek, nmax, 3, "ewald/conp:ek");
+    memory->create3d_offset(cs, -kmax, kmax, 3, nmax, "ewald/conp:cs");
+    memory->create3d_offset(sn, -kmax, kmax, 3, nmax, "ewald/conp:sn");
     kmax_created = kmax;
   }
   boundcorr->setup(xprd_wire, yprd_wire, zprd_slab, g_ewald);
@@ -1167,17 +1167,17 @@ void EwaldConp::compute_matrix_corr(bigint *imat, double **matrix) {
 
 /* ---------------------------------------------------------------------- */
 
-void EwaldConp::update_eikr(bool force_update) {
-  if (eikr_step < update->ntimestep || force_update) {
+void EwaldConp::update_eikr(bool enforce_update) {
+  if (eikr_step < update->ntimestep || enforce_update) {
     // extend size of per-atom arrays if necessary
     if (atom->nmax > nmax) {
       memory->destroy(ek);
       memory->destroy3d_offset(cs, -kmax_created);
       memory->destroy3d_offset(sn, -kmax_created);
       nmax = atom->nmax;
-      memory->create(ek, nmax, 3, "ewald:ek");
-      memory->create3d_offset(cs, -kmax, kmax, 3, nmax, "ewald:cs");
-      memory->create3d_offset(sn, -kmax, kmax, 3, nmax, "ewald:sn");
+      memory->create(ek, nmax, 3, "ewald/conp:ek");
+      memory->create3d_offset(cs, -kmax, kmax, 3, nmax, "ewald/conp:cs");
+      memory->create3d_offset(sn, -kmax, kmax, 3, nmax, "ewald/conp:sn");
       kmax_created = kmax;
     }
     eikr_step = update->ntimestep;

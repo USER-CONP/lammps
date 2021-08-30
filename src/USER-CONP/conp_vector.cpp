@@ -21,12 +21,9 @@
 #include "group.h"
 #include "kspace.h"
 #include "neigh_list.h"
-//#include "neigh_request.h"
-//#include "neighbor.h"
 #include "pair.h"
 
 using namespace LAMMPS_NS;
-using namespace std;
 
 #define EWALD_P 0.3275911
 #define A1 0.254829592
@@ -35,8 +32,9 @@ using namespace std;
 #define A4 -1.453152027
 #define A5 1.061405429
 
-ConpVector::ConpVector(LAMMPS *lmp, int igroup, double eta) : Pointers(lmp) {
-  this->igroup = igroup;
+ConpVector::ConpVector(LAMMPS *lmp, int electrode_group, double eta)
+    : Pointers(lmp) {
+  igroup = electrode_group;  // group of all electrode atoms
   groupbit = group->bitmask[igroup];
   ngroup = group->count(igroup);
   vector = new double[ngroup]();  // init to zero
@@ -71,12 +69,7 @@ ConpVector::~ConpVector() {
 
 /* ---------------------------------------------------------------------- */
 
-// void ConpVector::init_list(int [>id<], NeighList *ptr) { list = ptr; }
-
-/* ---------------------------------------------------------------------- */
-
 void ConpVector::setup(std::vector<int> tag_ids) {
-  // error if Kspace style does not compute coul/vectr interactions
   if (force->kspace == nullptr)
     error->all(FLERR, "No Kspace style defined for conp vector");
 
@@ -138,8 +131,8 @@ void ConpVector::pair_contribution() {
   double *q = atom->q;
   int *type = atom->type;
   int *mask = atom->mask;
+  // neighbor list will be ready because called from post_neighbor
   NeighList *list = pair->list;
-  // neighbor->build_one(list); // TODO build automatically?
   int const nlocal = atom->nlocal;
   int const inum = list->inum;
   int *ilist = list->ilist;
