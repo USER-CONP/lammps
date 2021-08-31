@@ -25,6 +25,8 @@
 .. index:: kspace_style msm/cg
 .. index:: kspace_style msm/cg/omp
 .. index:: kspace_style scafacos
+.. index:: kspace_style ewald/conp
+.. index:: kspace_style pppm/conp
 
 kspace_style command
 ====================
@@ -36,7 +38,7 @@ Syntax
 
    kspace_style style value
 
-* style = *none* or *ewald* or *ewald/dipole* or *ewald/dipole/spin* or *ewald/disp* or *ewald/omp* or *pppm* or *pppm/cg* or *pppm/disp* or *pppm/tip4p* or *pppm/stagger* or *pppm/disp/tip4p* or *pppm/gpu* or *pppm/intel* or *pppm/disp/intel* or *pppm/kk* or *pppm/omp* or *pppm/cg/omp* or *pppm/disp/tip4p/omp* or *pppm/tip4p/omp* or *msm* or *msm/cg* or *msm/omp* or *msm/cg/omp* or *scafacos*
+* style = *none* or *ewald* or *ewald/dipole* or *ewald/dipole/spin* or *ewald/disp* or *ewald/omp* or *pppm* or *pppm/cg* or *pppm/disp* or *pppm/tip4p* or *pppm/stagger* or *pppm/disp/tip4p* or *pppm/gpu* or *pppm/intel* or *pppm/disp/intel* or *pppm/kk* or *pppm/omp* or *pppm/cg/omp* or *pppm/disp/tip4p/omp* or *pppm/tip4p/omp* or *msm* or *msm/cg* or *msm/omp* or *msm/cg/omp* or *scafacos* or *ewald/conp* or *pppm/conp*
 
   .. parsed-literal::
 
@@ -99,6 +101,10 @@ Syntax
          smallq = cutoff for charges to be considered (optional) (charge units)
        *scafacos* values = method accuracy
          method = fmm or p2nfft or p3m or ewald or direct
+         accuracy = desired relative error in forces
+       *ewald/conp* value = accuracy
+         accuracy = desired relative error in forces
+       *pppm/conp* value = accuracy
          accuracy = desired relative error in forces
 
 Examples

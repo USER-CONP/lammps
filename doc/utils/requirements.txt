@@ -1,3 +1,4 @@
+six
 Sphinx
 sphinxcontrib-spelling
 git+https://github.com/akohlmey/sphinx-fortran@parallel-read

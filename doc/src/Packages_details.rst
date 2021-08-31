@@ -71,6 +71,7 @@ page gives those details.
    * :ref:`USER-CGDNA <PKG-USER-CGDNA>`
    * :ref:`USER-CGSDK <PKG-USER-CGSDK>`
    * :ref:`USER-COLVARS <PKG-USER-COLVARS>`
+   * :ref:`USER-CONP <PKG-USER-CONP>`
    * :ref:`USER-DIFFRACTION <PKG-USER-DIFFRACTION>`
    * :ref:`USER-DPD <PKG-USER-DPD>`
    * :ref:`USER-DRUDE <PKG-USER-DRUDE>`
@@ -1321,6 +1322,29 @@ This package has :ref:`specific installation instructions <user-colvars>` on the
 * lib/colvars/README
 * :doc:`fix colvars <fix_colvars>`
 * examples/USER/colvars
+
+----------
+
+.. _PKG-USER-CONP:
+
+USER-CONP package
+--------------------
+
+**Contents:**
+
+The CONP package allows the user to enforce a constant potential method for
+groups of atoms that interact with the remaining atoms as electrolyte.
+
+**Authors:** The CONP library is written and maintained by Ludwig Ahrens-Iwers
+(TUHH, Hamburg, Germany) and Robert Meißner (TUHH, Hamburg, Germany).
+
+**Install:**
+
+This package has :ref:`specific installation instructions <user-conp>` on the :doc:`Build extras <Build_extras>` page.
+
+**Supporting info:**
+
+* :doc:`fix charge_update <fix_charge_update>`
 
 ----------
 
