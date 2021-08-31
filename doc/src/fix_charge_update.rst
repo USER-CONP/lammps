@@ -18,9 +18,9 @@ Syntax
 
     *symm(etry) on/off*
         turn on/off charge neutrality constraint
-    *couple <group1> potential1>*
-        group1 = group of electrode atoms
-        potential1 = electric potential in Volts
+    *couple <group-ID> <potential>*
+        group-ID = add another group of electrode atoms
+        potential = electric potential in volts applied to this electrode
     *write_mat* <filename>
         write elastance matrix to file
     *write_inv* <filename>
@@ -42,7 +42,7 @@ Examples
 Description
 """""""""""
 
-The fix charge_update implements the constant potential method (CPM)
+The fix charge_update implements a constant potential method (CPM)
 (:ref:`Siepmann <Siepmann>`, :ref:`Reed <Reed3>`).  Charges of groups specified
 as group-ID and with the `couple` keyword are adapted to meet their respective
 potential at every time step.  An arbitrary number of electrodes can be set but
@@ -68,7 +68,7 @@ setting "slab ew2d":
 
 .. warning::
 
-   Atom positions of electrode particles have to be fixed at all times.
+   Currently, atom positions of electrode particles have to be fixed at all times.
 
 ----------
 
