@@ -1226,7 +1226,7 @@ be built for the most part with all major versions of the C++ language.
 USER-CONP package
 -----------------
 
-The package KSPACE is a dependcy for this package.
+This package depends on the KSPACE package.
 
 .. tabs::
 
@@ -1237,7 +1237,7 @@ The package KSPACE is a dependcy for this package.
 
    .. tab:: Traditional make
 
-      The package is activated with ``make yes-KSPACE`` and the dependcy ``make
+      The package is activated with ``make yes-KSPACE`` and ``make
       yes-USER-CONP``
 
 
