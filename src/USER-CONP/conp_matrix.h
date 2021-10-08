@@ -23,9 +23,10 @@ class ConpMatrix : protected Pointers {
   void setup(std::vector<int>);
   void compute_array();
   double **array;
+  int igroup;
 
  private:
-  int igroup, groupbit;
+  int  groupbit;
   bigint ngroup;
   double **cutsq;
   double g_ewald, eta;

@@ -23,9 +23,10 @@ class ConpVector : protected Pointers {
   void setup(std::vector<int>);
   void compute_vector();
   double *vector;
+  int igroup;
 
  private:
-  int igroup, groupbit;
+  int groupbit;
   bigint ngroup;
   double **cutsq;
   double g_ewald, eta;
