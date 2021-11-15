@@ -1,3 +1,29 @@
+This version of the LAMMPS software package features an implementation of the
+constant potential method (CPM).
+
+The fix charge_update implements the CPM. Charges of groups specified as
+group-ID and with the couple keyword are adapted to meet their respective
+potential at every time step. An arbitrary number of electrodes can be set but
+the respective groups may not overlap. Electrode charges have a Gaussian charge
+distribution with reciprocal width eta. The energy minimization is achieved via
+matrix inversion.
+
+The fix necessitates the use of a long range solver that can provide the matrix
+of electrode-electrode interactions and a vector of electrode-electrolyte
+interactions. The Kspace styles ewald/conp and pppm/conp are created
+specifically for this task.
+
+For systems with non-periodic boundaries in one or two directions dipole
+corrections are available with the kspace_modify. For ewald/conp a
+two-dimensional Ewald summation can be used by setting “slab ew2d”:
+
+Examples can be found in the directory "./examples/USER/conp/".
+
+In order to install the package with cmake use "cmake -D PKG_USER-CONP=yes ."
+and make sure the KSPACE package is installed.
+
+----------------------------------------------------------------------
+
 This is the LAMMPS software package.
 
 LAMMPS stands for Large-scale Atomic/Molecular Massively Parallel
