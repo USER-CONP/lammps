@@ -1,3 +1,5 @@
+# Constant Potential on a Mesh (and more)
+
 This version of the LAMMPS software package features an implementation of the
 constant potential method (CPM).
 
@@ -16,7 +18,7 @@ is achieved via matrix inversion.
 
 `η` = Gaussian width parameter in angstrom<sup>-1</sup>
 
-`ψ`: charges such that group-ID has a potential ψ volts.
+`ψ` = charges such that group-ID has a potential ψ volts.
 
 ## The optional keywords and values allowed are as follows:
 
@@ -28,7 +30,7 @@ for later reuse.
 
 `read_inv [file name]` = read inverse of electrode-electrode matrix.
 
-`symm [on/off]` = use symmetric matrix as defined in Scalfi et al. to ensure
+`symm [on/off]` = use symmetric matrix as defined in Scalfi et al. (PCCP, 2020, 22, 10480) to ensure
 charge neutrality.
 
 The fix necessitates the use of a long range solver that can provide the matrix
