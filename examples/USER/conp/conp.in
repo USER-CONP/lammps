@@ -17,7 +17,8 @@ include "mw.settings"
 
 dump alldump all custom 1000 all.lammpstrj id mol type x y z q
 fix            fxnvt electrolyte nvt temp 298.0 298.0 241
-fix            fxupdate bot charge_update -1.0 1.805132 couple top 1.0 write_inv fix_inv.csv symm on
+#              fix_id    group1 fix_name     psi1 eta             group2 psi2 
+fix            fxupdate bot    charge_update -1.0 1.805132 couple top    1.0  write_inv fix_inv.csv symm on
 compute        q ele property/atom q
 compute        qtop top reduce sum c_q
 compute        qbot bot reduce sum c_q
