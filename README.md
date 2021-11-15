@@ -45,10 +45,10 @@ two-dimensional Ewald summation can be used by setting “slab ew2d”:
 Specific examples on how to use this code be found in the directory
 "./examples/USER/conp/".
 
-In order to install the package with cmake use "cmake -D PKG_USER-CONP=yes ."
+In order to install the package with cmake use "cmake -D PKG_USER-CONP=yes".
 and make sure the KSPACE package is installed. A traditional make with
-"make-yes user-conp" requires that the linalg library is previously build.  The
-linalg library is found in lib/linalg. See the readme therein for more details
+"make-yes user-conp" requires that the linalg library was previously build.  The
+linalg library is found in "./lib/linalg". See the readme therein for more details
 on how to compile it.
 
 More information on this specific implementation can be found under: 
