@@ -1,3 +1,10 @@
+# Warning
+
+This implementation of the constant potential method is deprecated.
+You can find the new version here: 
+
+https://github.com/robeme/lammps/tree/electrode
+
 # Constant Potential on a Mesh (and more)
 
 This version of the LAMMPS software package features an implementation of the
